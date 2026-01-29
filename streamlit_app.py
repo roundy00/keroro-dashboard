@@ -52,4 +52,4 @@ selected_info = {'machine':selected_machine,
                  'start time':time_range[0],
                  'end time':time_range[1]}
 input_info = pd.DataFrame([selected_info])
-input_info
+st.dataframe(input_info, hide_index=True)
