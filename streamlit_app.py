@@ -49,6 +49,7 @@ with st.sidebar:
 # 메인 페이지에 현재 선택 정보 보여주기
 selected_info = {'machine':selected_machine,
                  'model':model_type,
-                 'time':time_range}
-input_info = pd.DataFrame([selected_info])
+                 'start time':time_range[0]
+                 'end time':time_range[1]}
+input_info = pd.DataFrame([selected_info], index=False)
 input_info
