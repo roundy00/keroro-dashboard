@@ -11,7 +11,7 @@ with st.expander('Data'):
   df
 
   st.write('**Feature**')
-  X = df.drop(labels = 'lable', axis=1)
+  X = df.drop(labels = 'label', axis=1)
   X
 
   st.write('**Anomaly  Detection**')
