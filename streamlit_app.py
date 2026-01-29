@@ -9,3 +9,11 @@ with st.expander('Data'):
   st.write('**Raw Data**')
   df = pd.read_csv('https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/machine-1-1/machine-1-1_test.csv')
   df
+
+  st.write('**Feature**')
+  X = df.drop('lable', axis=1)
+  X
+
+  st.write('**Anomaly  Detection**')
+  y = df.label
+  y
