@@ -7,7 +7,8 @@ st.info('이 앱은 머신러닝 모델을 활용하여 실시간으로 서버 �
 
 with st.expander('Data'):
   st.write('**Raw Data**')
-   
+
+  # 데이터 로드 & 컬럼명 수정
   df = pd.read_csv('https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/machine-1-1/machine-1-1_test.csv')
   new_column_names = [
     'cpu_r', 'load_1', 'load_5', 'load_15', 'mem_shmem', 'mem_u', 'mem_u_e', 'total_mem',
@@ -32,4 +33,6 @@ with st.expander('Data'):
 
   st.write('**Anomaly  Detection**')
   y = df.label
-  y
+
+with st.expander('Data visualization'):
+  st.line_chart(data=df, x='timestamp', y='cpu_r')
