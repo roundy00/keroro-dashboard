@@ -43,5 +43,5 @@ with st.sidebar:
                     '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8', '2-9',
                     '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8', '3-9', '3-10', '3-11']
   selected_machine = st.sidebar.selectbox('대상 머신 선택', [f'machine-{i}' for i in machine_num])
-  time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df)))
+  time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df)), value = (0,len(df)
   
