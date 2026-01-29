@@ -51,5 +51,5 @@ selected_info = {'machine':selected_machine,
                  'model':model_type,
                  'start time':time_range[0],
                  'end time':time_range[1]}
-input_info = pd.DataFrame([selected_info], index=False)
+input_info = pd.DataFrame([selected_info])
 input_info
