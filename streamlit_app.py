@@ -50,5 +50,5 @@ with st.sidebar:
 selected_info = {'machine':selected_machine,
                  'model':model_type,
                  'time':time_range}
-input_info = pd.DataFrame(selected_info, index=False)
+input_info = pd.DataFrame(selected_info, index=[0])
 input_info
