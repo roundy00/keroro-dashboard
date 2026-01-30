@@ -14,8 +14,14 @@ machine_num = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
                     '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8', '2-9',
                     '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8', '3-9', '3-10', '3-11']
 
-# 데이터 로드 & 컬럼명 수정
-df = pd.read_csv('https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/machine-1-1/machine-1-1_test.csv')
+# Machine selection
+with st.sidebar:
+  st.header('Monitoring Settings')
+
+  selected_machine = st.sidebar.selectbox('대상 머신 선택', [f'machine-{i}' for i in machine_num])
+
+# Column Rename (Data Preprocess)
+df = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_test.csv')
 new_column_names = [
   'cpu_r', 'load_1', 'load_5', 'load_15', 'mem_shmem', 'mem_u', 'mem_u_e', 'total_mem',
   'disk_q', 'disk_r', 'disk_rb', 'disk_svc', 'disk_u', 'disk_w', 'disk_wa', 'disk_wb',
@@ -32,11 +38,8 @@ priority_columns = [
 priority_columns_test = priority_columns + ['label']
 df = df[priority_columns_test]
 
-# Data Preparation
+# Data Preparation : Model selection, time range setting
 with st.sidebar:
-  st.header('Monitoring Settings')
-
-  selected_machine = st.sidebar.selectbox('대상 머신 선택', [f'machine-{i}' for i in machine_num])
   model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df)), value = (15000,22000))
 
