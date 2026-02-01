@@ -81,37 +81,6 @@ if 'ML' in model_type:
   # 예측
   display_df['pred'] = model.predict(display_df)
 
-# 2. 딥러닝 모델인 경우 (API 호출)
-elif "DL" in model_type:
-    st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
-    
-    # 팀원에게 받은 서버 주소 적용
-    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/" 
-    
-    try:
-        # 백엔드 서버에서 최신 결과 데이터 가져오기 (GET 방식 예시)
-        response = requests.get(API_URL)
-        
-        if response.status_code == 200:
-            result_data = response.json()
-            # 서버가 보낸 JSON 데이터를 데이터프레임으로 변환
-            # (서버가 score, is_anomaly 등을 포함한 리스트를 준다고 가정)
-            res_df = pd.DataFrame(result_data)
-            
-            # 예측값(pred) 열에 서버의 이상 여부 결과 주입
-            display_df['pred'] = res_df['is_anomaly'].values
-            
-            # (선택사항) 이상 점수(Score)가 있다면 시각화에 활용 가능
-            if 'score' in res_df.columns:
-                display_df['anomaly_score'] = res_df['score'].values
-                
-        else:
-            st.error(f"서버 응답 오류: {response.status_code}")
-            display_df['pred'] = 0 # 에러 시 기본값
-    except Exception as e:
-        st.error(f"백엔드 서버 연결에 실패했습니다: {e}")
-        display_df['pred'] = 0
-
 # 예측값 시각화
 st.write("### 🚨 이상 탐지 결과 (Prediction)")
 pred_fig = px.line(display_df, x = 'timestamp', y = 'pred')
@@ -123,6 +92,66 @@ pred_fig.update_layout(
 )
 
 st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
+
+# 2. 딥러닝 모델인 경우 (API 호출)
+elif "DL" in model_type:
+    st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
+    
+    # 팀원에게 받은 서버 주소 적용
+    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict" 
+    
+    # 실시간 업데이트를 위한 공간 확보
+    chart_spot = st.empty()
+    status_spot = st.empty()
+    
+    # 2. 100개씩 잘라서 실시간처럼 보여주는 루프
+    # display_df에서 한 줄씩 서버로 쏘고 결과를 받아 업데이트합니다.
+    results = []
+    
+    for i in range(len(display_df)):
+        # 서버가 요구하는 38개 피처 추출 (timestamp 제외)
+        # main.py의 ENC_IN=38 규격에 맞춤 
+        current_row = display_df.iloc[i][new_column_names].tolist()
+        
+        try:
+            # 🚨 POST 방식으로 'values' 키에 담아 전송 
+            response = requests.post(API_URL, json={"values": current_row})
+            
+            if response.status_code == 200:
+                res = response.json()
+                
+                # 결과값 저장 (서버가 아직 100개를 못 모았으면 False 반환됨) 
+                results.append(1 if res['is_anomaly'] else 0)
+                
+                # 상태 표시
+                if res['status'] == "collecting":
+                    status_spot.info(f"데이터 수집 중... ({res['progress']})")
+                else:
+                    if res['is_anomaly']:
+                        status_spot.error(f"🚨 이상 감지! Score: {res['score']:.4f}")
+                    else:
+                        status_spot.success(f"✅ 정상 상태 (Score: {res['score']:.4f})")
+                
+                # 3. 실시간 차트 업데이트 (최근 100개 결과 표시)
+                if len(results) > 0:
+                    with chart_spot.container():
+                        # 현재까지의 결과를 반영한 임시 데이터프레임 생성
+                        temp_df = display_df.iloc[:len(results)].copy()
+                        temp_df['pred'] = results
+                        
+                        fig = px.line(temp_df.tail(100), x='timestamp', y='pred', title="Real-time Detection")
+                        fig.update_traces(line_color='#FF0000')
+                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{i}")
+
+            else:
+                st.error(f"서버 오류: {response.status_code}")
+                break
+                
+        except Exception as e:
+            st.error(f"연결 실패: {e}")
+            break
+            
+        time.sleep(0.1) # 실시간 속도 조절
 
 with st.expander('Data'):
   st.write('**Raw Data**')
