@@ -50,8 +50,8 @@ priority_columns_train = priority_columns + ['label']
 with st.sidebar:
   model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
 
-df_train = df_train[priority_columns_train]
 if 'ML' in model_type:
+  df_train = df_train[priority_columns_train]
   df_input = df_input[priority_columns]
 else:
   pass
@@ -151,8 +151,12 @@ elif "DL" in model_type:
                     
                     # 차트 업데이트 (최근 100개 데이터)
                     with chart_box.container():
-                        temp_df = pd.DataFrame(scores[-100:], columns=['score'])
-                        fig = px.line(temp_df, title="Real-time Anomaly Score")
+                        latest_scores = scores[-100:]
+                        temp_df = pd.DataFrame({
+                            'step': range(len(scores) - len(latest_scores), len(scores)),
+                            'score': latest_scores
+                        })
+                        fig = px.line(temp_df, x='step', y='score', title="Real-time Anomaly Score (Last 100)")
                         # 임계치 선 추가 (main.py의 THRESHOLD 사용) 
                         fig.add_hline(y=res['threshold'], line_dash="dash", line_color="red")
                         st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
