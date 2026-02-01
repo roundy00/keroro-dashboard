@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn. ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 import plotly.express as px
+import requests
 
 # 페이지 설정 (탭 이름, 아이콘 등)
 st.set_page_config(page_title="실시간 서버 모니터링",  # 원하는 이름으로 변경
@@ -71,12 +72,45 @@ selected_info = {'machine':selected_machine,
 input_info = pd.DataFrame([selected_info])
 st.dataframe(input_info, hide_index=True)
 
-# 모델 학습
-model = selected_model_dict[model_type]
-model.fit(X, y)
+# 1. 머신러닝 모델인 경우
+if 'ML' in model_type:
+  # 모델 학습
+  model = selected_model_dict[model_type]
+  model.fit(X, y)
+  
+  # 예측
+  display_df['pred'] = model.predict(display_df)
 
-# 예측
-display_df['pred'] = model.predict(display_df)
+# 2. 딥러닝 모델인 경우 (API 호출)
+elif "DL" in model_type:
+    st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
+    
+    # 팀원에게 받은 서버 주소 적용
+    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict" 
+    
+    try:
+        # 백엔드 서버에서 최신 결과 데이터 가져오기 (GET 방식 예시)
+        response = requests.get(API_URL)
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            # 서버가 보낸 JSON 데이터를 데이터프레임으로 변환
+            # (서버가 score, is_anomaly 등을 포함한 리스트를 준다고 가정)
+            res_df = pd.DataFrame(result_data)
+            
+            # 예측값(pred) 열에 서버의 이상 여부 결과 주입
+            display_df['pred'] = res_df['is_anomaly'].values
+            
+            # (선택사항) 이상 점수(Score)가 있다면 시각화에 활용 가능
+            if 'score' in res_df.columns:
+                display_df['anomaly_score'] = res_df['score'].values
+                
+        else:
+            st.error(f"서버 응답 오류: {response.status_code}")
+            display_df['pred'] = 0 # 에러 시 기본값
+    except Exception as e:
+        st.error(f"백엔드 서버 연결에 실패했습니다: {e}")
+        display_df['pred'] = 0
 
 # 예측값 시각화
 st.write("### 🚨 이상 탐지 결과 (Prediction)")
