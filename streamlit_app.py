@@ -86,7 +86,7 @@ elif "DL" in model_type:
     st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
     # 팀원에게 받은 서버 주소 적용
-    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict" 
+    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/" 
     
     try:
         # 백엔드 서버에서 최신 결과 데이터 가져오기 (GET 방식 예시)
