@@ -181,10 +181,15 @@ elif "DL" in model_type:
                     
                     # 상태 업데이트
                     with status_box.container():
+                        # 서버에서 온 실제 threshold와 score를 직접 텍스트로 찍어봅니다.
+                        current_threshold = res.get('threshold', 0.5)
+                        current_score = res.get('score', 0.0)
+                        
                         if is_anomaly:
-                            st.error(f"🚨 이상 발생! 점수: {score:.4f}")
+                            st.error(f"🚨 이상 발생! 점수: {current_score:.6f} (임계치: {current_threshold:.6f})")
                         else:
-                            st.success(f"✅ 정상 작동 중 (점수: {score:.4f})")
+                            # 점수가 임계치에 얼마나 근접했는지 보여줍니다.
+                            st.info(f"✅ 정상 (점수: {current_score:.6f} / 임계치: {current_threshold:.6f})")
                     
                     # 차트 업데이트 (최근 100개 데이터)
                     with chart_box.container():
