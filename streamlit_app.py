@@ -76,7 +76,8 @@ selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight
   # selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
   #                        "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
   
-
+# 슬라이더에서 선택된 범위만큼 데이터 자르기
+display_df = df_input.iloc[time_range[0] : time_range[1] + 1]
 
 # 메인 페이지에 현재 선택 정보 보여주기
 selected_info = {'machine':selected_machine,
