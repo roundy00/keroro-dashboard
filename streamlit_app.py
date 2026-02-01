@@ -45,24 +45,38 @@ priority_columns = [
   'disk_q', 'disk_r', 'disk_w', 'disk_u', 'eth1_fi', 'eth1_fo','tcp_timeouts']
 
 priority_columns_train = priority_columns + ['label']
-df_train = df_train[priority_columns_train]
-df_input = df_input[priority_columns]
 
+with st.sidebar:
+  model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
+
+df_train = df_train[priority_columns_train]
+if 'ML' in model_type:
+  df_input = df_input[priority_columns]
+else:
+  pass
+
+with st.sidebar:
+  time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
+  
 X = df_train.drop(labels = 'label', axis=1) # 학습-문제데이터
 y = df_train.label # 학습-정답데이터
 
+scale_pos_weight = (len(y) - sum(y)) / sum(y)
+selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
+                       "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
 
 # Data Preparation : Model selection, time range setting
-with st.sidebar:
-  model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
-  time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
+# with st.sidebar:
+#   model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
 
-  scale_pos_weight = (len(y) - sum(y)) / sum(y)
-  selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
-                         "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
+# with st.sidebar:
+#   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
+
+  # scale_pos_weight = (len(y) - sum(y)) / sum(y)
+  # selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
+  #                        "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
   
-# 슬라이더에서 선택된 범위만큼 데이터 자르기
-display_df = df_input.iloc[time_range[0] : time_range[1] + 1]
+
 
 # 메인 페이지에 현재 선택 정보 보여주기
 selected_info = {'machine':selected_machine,
@@ -100,49 +114,51 @@ elif "DL" in model_type:
     # 팀원에게 받은 서버 주소 적용
     API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict" 
     
-    # 실시간 업데이트를 위한 공간 확보
-    chart_spot = st.empty()
-    status_spot = st.empty()
+    # 실시간 대시보드 구성을 위한 공간
+    status_box = st.empty()
+    chart_box = st.empty()
     
-    # 2. 100개씩 잘라서 실시간처럼 보여주는 루프
-    # display_df에서 한 줄씩 서버로 쏘고 결과를 받아 업데이트합니다.
-    results = []
+    # 결과 저장 리스트
+    scores = []
     
+    # 시뮬레이션 시작 (test_client.py의 로직을 Streamlit 안으로 가져옴)
+    # display_df의 데이터를 한 줄씩 쏘며 결과를 받아옵니다.
     for i in range(len(display_df)):
-        # 서버가 요구하는 38개 피처 추출 (timestamp 제외)
-        # main.py의 ENC_IN=38 규격에 맞춤 
-        current_row = display_df.iloc[i][new_column_names].tolist()
+        # 38개 피처 추출 (new_column_names 활용)
+        current_row = display_df.iloc[i][new_column_names].values.tolist()
         
         try:
-            # 🚨 POST 방식으로 'values' 키에 담아 전송 
+            # 🚨 서버에 현재 행 데이터를 보내고 결과를 받음 
             response = requests.post(API_URL, json={"values": current_row})
             
             if response.status_code == 200:
                 res = response.json()
                 
-                # 결과값 저장 (서버가 아직 100개를 못 모았으면 False 반환됨) 
-                results.append(1 if res['is_anomaly'] else 0)
+                if res['status'] == "ready":
+                    # 결과값 업데이트
+                    is_anomaly = res['is_anomaly']
+                    score = res['score']
+                    scores.append(score)
+                    
+                    # 상태 업데이트
+                    with status_box.container():
+                        if is_anomaly:
+                            st.error(f"🚨 이상 발생! 점수: {score:.4f}")
+                        else:
+                            st.success(f"✅ 정상 작동 중 (점수: {score:.4f})")
+                    
+                    # 차트 업데이트 (최근 100개 데이터)
+                    with chart_box.container():
+                        temp_df = pd.DataFrame(scores[-100:], columns=['score'])
+                        fig = px.line(temp_df, title="Real-time Anomaly Score")
+                        # 임계치 선 추가 (main.py의 THRESHOLD 사용) 
+                        fig.add_hline(y=res['threshold'], line_dash="dash", line_color="red")
+                        st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
                 
-                # 상태 표시
-                if res['status'] == "collecting":
-                    status_spot.info(f"데이터 수집 중... ({res['progress']})")
                 else:
-                    if res['is_anomaly']:
-                        status_spot.error(f"🚨 이상 감지! Score: {res['score']:.4f}")
-                    else:
-                        status_spot.success(f"✅ 정상 상태 (Score: {res['score']:.4f})")
-                
-                # 3. 실시간 차트 업데이트 (최근 100개 결과 표시)
-                if len(results) > 0:
-                    with chart_spot.container():
-                        # 현재까지의 결과를 반영한 임시 데이터프레임 생성
-                        temp_df = display_df.iloc[:len(results)].copy()
-                        temp_df['pred'] = results
-                        
-                        fig = px.line(temp_df.tail(100), x='timestamp', y='pred', title="Real-time Detection")
-                        fig.update_traces(line_color='#FF0000')
-                        st.plotly_chart(fig, use_container_width=True, key=f"chart_{i}")
-
+                    # 데이터 수집 단계 (WIN_SIZE 100개 채우는 중) 
+                    status_box.info(f"⏳ 서버 데이터 축적 중... ({res['progress']})")
+            
             else:
                 st.error(f"서버 오류: {response.status_code}")
                 break
@@ -151,7 +167,7 @@ elif "DL" in model_type:
             st.error(f"연결 실패: {e}")
             break
             
-        time.sleep(0.1) # 실시간 속도 조절
+        time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
 with st.expander('Data'):
   st.write('**Raw Data**')
