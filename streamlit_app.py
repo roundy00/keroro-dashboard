@@ -87,6 +87,34 @@ selected_info = {'machine':selected_machine,
                  'end time':time_range[1]}
 input_info = pd.DataFrame([selected_info])
 st.dataframe(input_info, hide_index=True)
+# ==========================================
+# 경고 발생 시 화면을 붉은색으로 깜빡이게 만드는 CSS입니다.
+def trigger_alert_css():
+    st.markdown(
+        """
+        <style>
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+        .emergency-alert {
+            background-color: #FF0000;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 30px;
+            font-weight: bold;
+            border-radius: 10px;
+            animation: blinker 0.5s linear infinite;
+            margin-bottom: 20px;
+        }
+        </style>
+        <div class="emergency-alert">
+            🚨 EMERGENCY: ANOMALY DETECTED 🚨
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+# ===============================================
 
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
@@ -114,10 +142,11 @@ elif "DL" in model_type:
     st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
     # 팀원에게 받은 서버 주소 적용
-    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/" 
+    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict" 
     
     # 실시간 대시보드 구성을 위한 공간
     status_box = st.empty()
+    alert_box = st.empty()  # 경고창 전용 공간
     chart_box = st.empty()
     
     # 결과 저장 리스트
@@ -141,6 +170,14 @@ elif "DL" in model_type:
                     is_anomaly = res['is_anomaly']
                     score = res['score']
                     scores.append(score)
+
+                    # 🚨 이상 감지 시 '개요란한' 경고 발생
+                    if is_anomaly:
+                        with alert_box.container():
+                            trigger_alert_css()  # 빨간색 깜빡이 효과
+                            st.snow()            # 눈 내리는 효과 추가 (옵션)
+                    else:
+                        alert_box.empty()        # 정상일 때는 경고창 제거
                     
                     # 상태 업데이트
                     with status_box.container():
