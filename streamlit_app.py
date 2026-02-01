@@ -4,6 +4,7 @@ from sklearn. ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 import plotly.express as px
 import requests
+import time
 
 # 페이지 설정 (탭 이름, 아이콘 등)
 st.set_page_config(page_title="실시간 서버 모니터링",  # 원하는 이름으로 변경
