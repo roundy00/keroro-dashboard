@@ -114,7 +114,7 @@ elif "DL" in model_type:
     st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
     # 팀원에게 받은 서버 주소 적용
-    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict" 
+    API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/" 
     
     # 실시간 대시보드 구성을 위한 공간
     status_box = st.empty()
