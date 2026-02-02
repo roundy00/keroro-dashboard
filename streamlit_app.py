@@ -24,7 +24,9 @@ machine_num = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
 
 # 경고 상태를 관리하기 위한 변수 초기화
 if 'mute_alert' not in st.session_state:
-    st.session_state.mute_alert = False
+  st.session_state.mute_alert = False
+if 'current_idx' not in st.session_state:
+  st.session_state.current_idx = 0
   
 # Machine selection
 with st.sidebar:
@@ -34,9 +36,9 @@ with st.sidebar:
     st.session_state.mute_alert = True
     st.success("경보가 일시 중지되었습니다.")
   
-  if st.button("🔄 경보 시스템 재가동"):
-    st.session_state.mute_alert = False
-    st.info("경보 시스템이 다시 활성화되었습니다.")
+  if st.button("🔄 분석 처음부터 다시 시작"):
+    st.session_state.current_idx = 0  # 인덱스 초기화
+    st.rerun()  # 페이지 새로고침
       
   st.header('Monitoring Settings')
 
@@ -120,9 +122,6 @@ def trigger_emergency_alert():
       """,
       unsafe_allow_html=True
   )
-  # 경보음 추가 (공개된 사이렌 사운드 링크 사용)
-  siren_url = "https://www.soundjay.com/mechanical/sounds/siren-1.mp3"
-  st.audio(siren_url, format="audio/mp3", autoplay=True)
 # ===============================================
 
 # 1. 머신러닝 모델인 경우
@@ -145,7 +144,8 @@ if 'ML' in model_type:
     
     scores_history = []  # 점수 기록 저장용
     
-    for i in range(len(display_df)):
+    for i in range(st.session_state.current_idx, len(display_df)):
+      st.session_state.current_idx = i
       current_row = display_df.iloc[i:i+1][new_column_names]
       
       # [핵심] predict() 대신 decision_function() 사용 (수치화된 점수)
@@ -164,8 +164,11 @@ if 'ML' in model_type:
       # 3. 화면 표시
       with status_box.container():
         if is_anomaly:
-          trigger_emergency_alert()
-          st.error(f"🚨 [위험] 시스템 장애 발생! (점수: {score:.4f})")
+          if not st.session_state.mute_alert:
+            trigger_emergency_alert()
+            st.error(f"🚨 [위험] 장애 발생! (점수: {score:.4f})")
+          else:
+            st.warning(f"🔇 [음소거] 이상 감지 중 (점수: {score:.4f})")
         elif is_warning:
           # 점수가 나빠지고 있는 상태
           st.warning(f"⚠️ [주의] 이상 전조 증상 포착! (점수: {score:.4f})")
