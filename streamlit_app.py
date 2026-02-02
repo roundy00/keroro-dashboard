@@ -290,12 +290,41 @@ with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
 
-# --- 공통 시각화 (변수명 충돌 해결) ---
-with st.expander('Feature visualization'):
-    # [수정] 분석 결과인 dynamic_features 중 상위 4개를 자동으로 보여줌
-    viz_cols = dynamic_features[:4] 
+# --- 공통 시각화 (모델이 선정한 주요 지표 Top 5 시각화) ---
+with st.expander('🔍 Top 5 Influential Features Detail View'):
+    st.write("모델이 분석한 이상 징후 기여도 상위 5개 지표의 변화 추이입니다.")
     
-    for col in viz_cols:
-        fig = px.line(display_df, x='timestamp', y=col, title=f'🔥 [Top Influence] {col} Over Time')
-        fig.update_layout(xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True), dragmode=False, hovermode='x')
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    # 1. 모델 종류(ML/DL)에 따라 상위 5개 컬럼 추출
+    viz_cols = []
+    
+    if "ML" in model_type:
+        if 'analysis_results' in locals():
+            # ML 분석 결과에서 상위 5개 Feature 이름 가져오기
+            viz_cols = analysis_results.head(5)['Feature'].tolist()
+    
+    elif "DL" in model_type:
+        if 'imp_df' in locals():
+            # DL 분석 결과에서 상위 5개 Feature 이름 가져오기
+            viz_cols = imp_df.head(5)['Feature'].tolist()
+
+    # 2. 추출된 컬럼이 있다면 시각화 수행
+    if viz_cols:
+        # 화면을 너무 길게 쓰지 않도록 2열 레이아웃 구성 (선택 사항)
+        # col1, col2 = st.columns(2) 
+        
+        for idx, col in enumerate(viz_cols):
+            # 시각화: 시계열 라인 차트
+            fig = px.line(display_df, x='timestamp', y=col, 
+                          title=f'📍 [Top {idx+1}] {col} Trend Analysis',
+                          color_discrete_sequence=['#00CC96']) # 지표별 강조색
+            
+            # 차트 레이아웃 최적화 (가독성 향상)
+            fig.update_layout(
+                margin=dict(l=20, r=20, t=40, b=20),
+                height=350,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("💡 모델 분석을 먼저 수행하면 주요 지표 그래프가 여기에 표시됩니다.")
