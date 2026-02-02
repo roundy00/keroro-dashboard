@@ -127,14 +127,14 @@ if 'ML' in model_type:
     
     # 결과 정리
     analysis_results = pd.DataFrame({
-        'Feature': X_train.columns,
+        'Feature': X.columns,
         'Importance': importance
     }).sort_values(by='Importance', ascending=False)
     
   # 예측
   dynamic_features = analysis_results['Feature'].head(10).tolist()
   # 예측 수행 (전체 피처 사용)
-  display_df['pred'] = model.predict(display_df[X_train.columns])
+  display_df['pred'] = model.predict(display_df[X.columns])
   
   # 예측값 시각화
   st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
