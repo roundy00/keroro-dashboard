@@ -271,6 +271,7 @@ if 'ML' in model_type:
 
 elif "DL" in model_type:
   st.write("### 🧠 Deep Learning Root Cause Analysis")
+  
   if st.button("코랩 서버에 분석 요청"):
     # DL은 38개 전체 피처를 사용 (new_column_names)
     target_data = display_df[new_column_names].iloc[-100:].values.tolist()
@@ -284,7 +285,7 @@ elif "DL" in model_type:
       try:
         # 본인의 최신 ngrok 주소로 수정 필수
         COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
-        response = requests.post(COLAB_URL, json=payload, timeout=60)
+        response = requests.post(COLAB_URL, json=payload, timeout=90)
         
         if response.status_code == 200:
           res_data = response.json()
@@ -294,12 +295,16 @@ elif "DL" in model_type:
             importance_dict = res_data["importance"]
             imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
 
-            # 3. 중요도 순으로 정렬 후 상위 10개 추출
-            imp_df = imp_df.sort_values(by='Importance', ascending=False).head(10)
-        
-            fig = px.bar(imp_df[::-1], x='Importance', y='Feature', orientation='h',
-                         title=f"DL Model Analysis: {selected_machine}",
-                         color_discrete_sequence=['#FF4B4B']) # DL은 강조색
+            # 절대값 기준 상위 10개 추출 및 세션 상태 저장 (하단 상세 뷰 연동용)
+            imp_df = imp_df.sort_values(by='Importance', ascending=False)
+            st.session_state['dl_importance'] = imp_df # 결과 저장을 통해 하단 Detail View와 연동
+            
+            top_10 = imp_df.head(10)
+            
+            fig = px.bar(top_10[::-1], x='Importance', y='Feature', orientation='h',
+                         title=f"DL Model 기여도 분석: {selected_machine}",
+                         color='Importance',
+                         color_continuous_scale='Reds') # DL은 강조색
             
             # 가독성을 위해 최상단에 큰 값이 오도록 정렬 유지
             fig.update_layout(yaxis={'categoryorder':'total ascending'})
