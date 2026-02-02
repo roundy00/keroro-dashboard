@@ -289,28 +289,27 @@ elif "DL" in model_type:
         
         if response.status_code == 200:
           res_data = response.json()
-          if "error" in res_data:
-            st.error(f"서버 에러: {res_data['error']}")
-          else:
+          if res_data.get("status") == "success":
             importance_dict = res_data["importance"]
+            
+            # 1. 데이터프레임 변환
             imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
-
-            # 절대값 기준 상위 10개 추출 및 세션 상태 저장 (하단 상세 뷰 연동용)
-            imp_df = imp_df.sort_values(by='Importance', ascending=False)
-            st.session_state['dl_importance'] = imp_df # 결과 저장을 통해 하단 Detail View와 연동
             
-            top_10 = imp_df.head(10)
+            # 2. 절대값 컬럼 생성 후 정렬 (순위 불일치 해결 핵심)
+            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+            imp_df = imp_df.sort_values(by='Abs_Importance', ascending=False)
             
-            fig = px.bar(top_10[::-1], x='Importance', y='Feature', orientation='h',
-                         title=f"DL Model 기여도 분석: {selected_machine}",
-                         color='Importance',
-                         color_continuous_scale='Reds') # DL은 강조색
-            
-            # 가독성을 위해 최상단에 큰 값이 오도록 정렬 유지
-            fig.update_layout(yaxis={'categoryorder':'total ascending'})
+            # 3. 시각화 (상위 10개)
+            top_10 = imp_df.head(10).copy()
+            fig = px.bar(top_10[::-1], x='Abs_Importance', y='Feature', orientation='h',
+                         title="이상 징후 기여도 (SHAP Value)",
+                         color='Abs_Importance', color_continuous_scale='Reds')
             st.plotly_chart(fig, use_container_width=True)
-        else:
-          st.error(f"서버 응답 실패 (Code: {response.status_code})")
+            
+            # 세션 상태에 저장 (상세 뷰 연동)
+            st.session_state['dl_importance'] = imp_df
+          else:
+            st.error(f"분석 실패: {res_data.get('message')}")
       except Exception as e:
         st.error(f"코랩 서버 연결 실패: {e}")
 
