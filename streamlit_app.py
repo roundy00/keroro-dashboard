@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from sklearn. ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+from sklearn.ensemble import IsolationForest
 import plotly.express as px
 import requests
 import time
@@ -28,11 +29,11 @@ with st.sidebar:
   selected_machine = st.sidebar.selectbox('대상 머신 선택', [f'machine-{i}' for i in machine_num])
 
 # Column Rename (Data Preprocess)
-df_train = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_test.csv')
-df_input = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-dashboard/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_train.csv')
+df_train = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_train.csv')
+df_input = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-dashboard/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_test.csv')
 
 with st.sidebar:
-  model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
+  model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)", "ML (IsolationForest)", "DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
 
 new_column_names = [
   'cpu_r', 'load_1', 'load_5', 'load_15', 'mem_shmem', 'mem_u', 'mem_u_e', 'total_mem',
@@ -50,11 +51,12 @@ with st.sidebar:
   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
   
 X = df_train.drop(columns = ['timestamp','label'], axis=1) # 학습-문제데이터
-y = df_train.label # 학습-정답데이터
+# y = df_train.label # 학습-정답데이터
 
 scale_pos_weight = (len(y) - sum(y)) / sum(y)
 selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
-                       "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
+                       "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42),
+                       "ML (IsolationForest)": IsolationForest(contamination=0.05, random_state=42)}
 
 
 # 슬라이더에서 선택된 범위만큼 데이터 자르기
@@ -98,57 +100,59 @@ def trigger_alert_css():
 # ===============================================
 
 # 1. 머신러닝 모델인 경우
+
 if 'ML' in model_type:
-  
-  # 선택된 모델 객체 가져오기
-  model = selected_model_dict[model_type]
-
-  # 학습
-  # SHAP 분석 전에 먼저 모델이 데이터를 완벽히 학습해야 합니다.
-  with st.spinner(f"[{selected_machine}] {model_type} 모델 학습 중..."):
-    model.fit(X, y)
-
-  # 학습된 모델을 토대로 실시간 SHAP 분석 수행 : 별도의 함수 없이 메인 로직에서 바로 계산
-  with st.spinner("학습된 모델의 판단 근거(SHAP)를 분석 중입니다..."):
-    # 계산 속도를 위해 300~500개 샘플링 권장
-    X_sample = X.sample(min(300, len(X)), random_state=42)
-    explainer = shap.TreeExplainer(model)
-    shap_v = explainer.shap_values(X_sample)
+    model = selected_model_dict[model_type]
     
-    # SHAP 출력 구조 대응 (RF, XGB 등 모델별 차이 해결)
-    if isinstance(shap_v, list):
-      sv = shap_v[1] if len(shap_v) > 1 else shap_v[0]
-    elif len(shap_v.shape) == 3:
-      sv = shap_v[:, :, 1]
-    else:
-      sv = shap_v
+    # [A] Isolation Forest (비지도 학습) 처리
+    if model_type == "ML (IsolationForest)":
+        with st.spinner(f"[{selected_machine}] 정상 패턴 학습 중 (Isolation Forest)..."):
+            # 정상 데이터(df_train)로 학습
+            model.fit(X) 
+            
+        # 예측: 1(정상), -1(이상)으로 출력됨 -> 이를 0(정상), 1(이상)로 변환
+        raw_preds = model.predict(display_df[new_column_names])
+        display_df['pred'] = [1 if p == -1 else 0 for p in raw_preds]
         
-    importance = np.abs(sv).mean(axis=0).flatten()
-    
-    # 결과 정리
-    analysis_results = pd.DataFrame({
-        'Feature': X.columns,
-        'Importance': importance
-    }).sort_values(by='Importance', ascending=False)
-    
-  # 예측
-  dynamic_features = analysis_results['Feature'].head(10).tolist()
-  # 예측 수행 (전체 피처 사용)
-  display_df['pred'] = model.predict(display_df[X.columns])
-  
-  # 예측값 시각화
-  st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
-  pred_fig = px.line(display_df, x = 'timestamp', y = 'pred')
-  pred_fig.update_traces(line_color='#FF0000', line_width=2)
-  st.plotly_chart(pred_fig, use_container_width=True)
+    # [B] RandomForest / XGBoost (지도 학습) 처리
+    else:
+        y = df_train['label'] # 지도학습에 필요한 라벨
+        with st.spinner(f"[{selected_machine}] {model_type} 학습 중..."):
+            model.fit(X, y)
+        display_df['pred'] = model.predict(display_df[new_column_names])
 
-  # --- 🔍 Root Cause Analysis (모델이 학습을 통해 얻은 인사이트) ---
-  st.write("### 🔍 Root Cause Analysis (Model Insight)")
-  top_15 = analysis_results.head(15).sort_values(by='Importance', ascending=True)
-  fig = px.bar(top_15, x='Importance', y='Feature', orientation='h',
-               title=f"{model_type}이 판단한 주요 원인 지표 (Top 15)",
-               color='Importance', color_continuous_scale='Reds')
-  st.plotly_chart(fig, use_container_width=True)
+    # --- 시각화 섹션 ---
+    # 1. 이상 탐지 결과 알림 (깜빡이 효과)
+    if display_df['pred'].sum() > 0:
+        trigger_alert_css()
+        st.error(f"⚠️ 현재 범위 내에서 {int(display_df['pred'].sum())}건의 이상 징후가 포착되었습니다!")
+
+    # 2. 결과 그래프
+    st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
+    pred_fig = px.line(display_df, x='timestamp', y='pred', title="Anomaly Detection Timeline")
+    pred_fig.update_traces(line_color='#FF0000', line_width=2)
+    st.plotly_chart(pred_fig, use_container_width=True)
+
+    # 3. SHAP 원인 분석 (선택 사항)
+    # Isolation Forest도 Tree 기반이라 TreeExplainer 사용 가능
+    with st.spinner("판단 근거(SHAP) 분석 중..."):
+        explainer = shap.TreeExplainer(model)
+        # 속도를 위해 샘플링
+        X_sample = display_df[new_column_names].sample(min(100, len(display_df)))
+        shap_values = explainer.shap_values(X_sample)
+        
+        # Isolation Forest SHAP 대응
+        if model_type == "ML (IsolationForest)":
+            sv = shap_values 
+        else:
+            sv = shap_values[1] if isinstance(shap_values, list) else shap_values
+
+        importance = np.abs(sv).mean(axis=0)
+        analysis_results = pd.DataFrame({'Feature': new_column_names, 'Importance': importance}).sort_values(by='Importance', ascending=False)
+        
+        st.write("### 🔍 Root Cause Analysis (주요 원인 지표)")
+        fig = px.bar(analysis_results.head(10), x='Importance', y='Feature', orientation='h', color='Importance', color_continuous_scale='Reds')
+        st.plotly_chart(fig, use_container_width=True)
   
 # ===============================================================================
 # 2. 딥러닝 모델인 경우 (API 호출)
