@@ -113,7 +113,8 @@ def trigger_alert_css():
 if 'ML' in model_type:
   # 모델 학습
   model = selected_model_dict[model_type]
-  model.fit(X, y)
+  X_features = priority_columns[1:] 
+  model.fit(X[X_features], y)
   
   # 예측
   display_df['pred'] = model.predict(display_df)
