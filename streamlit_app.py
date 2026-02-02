@@ -46,47 +46,10 @@ rename_dict = {f'col_{i}': new_column_names[i] for i in range(len(new_column_nam
 df_train.rename(columns=rename_dict, inplace=True)
 df_input.rename(columns=rename_dict, inplace=True)
 
-# --- ✨ [핵심] 모델 선택 후 실행되는 동적 피처 추출 로직 ---
-@st.cache_resource
-def get_model_specific_features(_model, _X, _y, feature_names, machine_name):
-  """선택된 모델에 최적화된 상위 피처 10개를 반환"""
-  X_train = _X.copy()
-  if 'timestamp' in X_train.columns:
-    X_train = X_train.drop(columns=['timestamp'])
-  
-  with st.spinner(f"[{machine_name}] 핵심 피처를 분석 중입니다..."):
-    # 학습
-    _model.fit(X_train, _y)
-    
-    # SHAP 계산 (계산 속도를 위해 500개 샘플링)
-    explainer = shap.TreeExplainer(_model)
-    X_sample = _X.sample(min(500, len(X_train)), random_state=42)
-    shap_v = explainer.shap_values(X_sample)
-    
-    if isinstance(shap_v, list):
-      sv = shap_v[1] # RF/XGB 분류 대응
-    elif len(shap_v.shape) == 3:
-      sv = shap_v[:, :, 1]
-    else:
-      sv = shap_v
-    
-    importance = np.abs(sv).mean(axis=0).flatten()
-
-    actual_feature_names = X_train.columns.tolist()
-    
-    # 6. 결과를 데이터프레임으로 정리
-    analysis_df = pd.DataFrame({
-        'Feature': actual_feature_names,
-        'Importance': importance
-    }).sort_values(by='Importance', ascending=False)
-
-    return analysis_df
-# ===============================================================================
-
 with st.sidebar:
   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
   
-X = df_train.drop(labels = ['timestamp','label'], axis=1) # 학습-문제데이터
+X = df_train.drop(columns = ['timestamp','label'], axis=1) # 학습-문제데이터
 y = df_train.label # 학습-정답데이터
 
 scale_pos_weight = (len(y) - sum(y)) / sum(y)
@@ -136,44 +99,57 @@ def trigger_alert_css():
 
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
-
-  # 🚀 [노트북 로직 실행] 전처리 단계에서 SHAP 분석 수행
-  analysis_results = get_model_specific_features(selected_model_dict[model_type], X, y, new_column_names, selected_machine)
-  
-  # 분석된 중요 피처 Top 10 추출
-  dynamic_features = analysis_results['Feature'].head(10).tolist()
   
   # 선택된 모델 객체 가져오기
   model = selected_model_dict[model_type]
 
   # 학습
-  model.fit(X[dynamic_features], y)
-  
+  # SHAP 분석 전에 먼저 모델이 데이터를 완벽히 학습해야 합니다.
+  with st.spinner(f"[{selected_machine}] {model_type} 모델 학습 중..."):
+    model.fit(X, y)
+
+  # 학습된 모델을 토대로 실시간 SHAP 분석 수행 : 별도의 함수 없이 메인 로직에서 바로 계산
+  with st.spinner("학습된 모델의 판단 근거(SHAP)를 분석 중입니다..."):
+    # 계산 속도를 위해 300~500개 샘플링 권장
+    X_sample = X_train.sample(min(300, len(X_train)), random_state=42)
+    explainer = shap.TreeExplainer(model)
+    shap_v = explainer.shap_values(X_sample)
+    
+    # SHAP 출력 구조 대응 (RF, XGB 등 모델별 차이 해결)
+    if isinstance(shap_v, list):
+      sv = shap_v[1] if len(shap_v) > 1 else shap_v[0]
+    elif len(shap_v.shape) == 3:
+      sv = shap_v[:, :, 1]
+    else:
+      sv = shap_v
+        
+    importance = np.abs(sv).mean(axis=0).flatten()
+    
+    # 결과 정리
+    analysis_results = pd.DataFrame({
+        'Feature': X_train.columns,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
+    
   # 예측
-  display_df['pred'] = model.predict(display_df[dynamic_features])
+  dynamic_features = analysis_results['Feature'].head(10).tolist()
+  # 예측 수행 (전체 피처 사용)
+  display_df['pred'] = model.predict(display_df[X_train.columns])
   
   # 예측값 시각화
   st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
   pred_fig = px.line(display_df, x = 'timestamp', y = 'pred')
   pred_fig.update_traces(line_color='#FF0000', line_width=2)
-  pred_fig.update_layout(
-      xaxis=dict(fixedrange=True),
-      yaxis=dict(fixedrange=True),
-      dragmode=False
-  )
+  st.plotly_chart(pred_fig, use_container_width=True)
+
+  # --- 🔍 Root Cause Analysis (모델이 학습을 통해 얻은 인사이트) ---
+  st.write("### 🔍 Root Cause Analysis (Model Insight)")
+  top_15 = analysis_results.head(15).sort_values(by='Importance', ascending=True)
+  fig = px.bar(top_15, x='Importance', y='Feature', orientation='h',
+               title=f"{model_type}이 판단한 주요 원인 지표 (Top 15)",
+               color='Importance', color_continuous_scale='Reds')
+  st.plotly_chart(fig, use_container_width=True)
   
-  st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
-
-  # --- 🔍 분석 결과 출력 섹션 ---
-  st.write("### 🔍 Root Cause Analysis")
-  if st.button("핵심 기여도 그래프 확인"):
-    # 이미 계산된 결과를 바 차트로 표시
-    fig = px.bar(analysis_results.head(10)[::-1], 
-                 x='Importance', y='Feature', orientation='h',
-                 title="모델 분석 기반 서버 이상 징후 주요 원인",
-                 color='Importance', color_continuous_scale='Blues')
-    st.plotly_chart(fig)
-
 # ===============================================================================
 # 2. 딥러닝 모델인 경우 (API 호출)
 
