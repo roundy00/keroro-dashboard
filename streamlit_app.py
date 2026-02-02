@@ -105,69 +105,80 @@ def trigger_alert_css():
 if 'ML' in model_type:
   model = selected_model_dict[model_type]
   
-  # [A] Isolation Forest (비지도 학습) 처리
+  # --- Isolation Forest 사전 탐지 파라미터 ---
+  ALERT_THRESHOLD = 0.0  # 실제 이상치 판단 기준 (이보다 낮으면 이상)
+  WARNING_THRESHOLD = 0.05 # 사전 경보 기준 (주의 단계)
+  WINDOW_SIZE = 5        # 점수 변화를 관찰할 윈도우
+  
   if model_type == "ML (IsolationForest)":
-    with st.spinner(f"[{selected_machine}] 정상 패턴 학습 중 (Isolation Forest)..."):
-      # 정상 데이터(df_train)로 학습
-      model.fit(X) 
-        
-    # --- 실시간 시뮬레이션 UI 공간 확보 ---
+    # 1. 학습은 그대로 진행 (정상 데이터 패턴 학습)
+    model.fit(X)
+    
+    # 실시간 분석을 위한 공간
     status_box = st.empty()
-    alert_box = st.empty()
     chart_box = st.empty()
     
-    # 데이터를 누적하며 그리기 위한 리스트
-    history_preds = []
+    scores_history = []  # 점수 기록 저장용
     
-    # [핵심] 선택한 시간 범위 데이터를 한 줄씩 읽으며 시뮬레이션
     for i in range(len(display_df)):
-      current_row = display_df.iloc[i:i+1] # 현재 시점 데이터
-      current_features = current_row[new_column_names]
+      current_row = display_df.iloc[i:i+1][new_column_names]
       
-      # 1. 예측 수행
-      if model_type == "ML (IsolationForest)":
-        p = model.predict(current_features)[0]
-        pred = 1 if p == -1 else 0
-      else:
-        pred = model.predict(current_features)[0]
+      # [핵심] predict() 대신 decision_function() 사용 (수치화된 점수)
+      # decision_function은 낮을수록(음수일수록) 더 이상함을 의미함
+      score = model.decision_function(current_row)[0]
+      scores_history.append(score)
       
-      history_preds.append(pred)
+      # 최근 N개의 점수 평균 계산
+      recent_scores = scores_history[-WINDOW_SIZE:]
+      avg_score = np.mean(recent_scores)
       
-      # 2. 알림 제어 (최근 5개 중 이상이 있으면 경고)
-      with alert_box.container():
-        if pred == 1:
-          trigger_alert_css()
-          st.toast(f"🚨 {selected_machine}: 이상 수치 감지!")
-        else:
-          st.empty()
-
-      # 3. 상태 표시
+      # 2. 사전 탐지 로직 (Early Warning)
+      is_anomaly = score < ALERT_THRESHOLD
+      is_warning = (score < WARNING_THRESHOLD) and (not is_anomaly)
+      
+      # 3. 화면 표시
       with status_box.container():
-        if pred == 1:
-          st.error(f"⚠️ 현재 상태: 이상 발생 (Index: {time_range[0] + i})")
+        if is_anomaly:
+          st.error(f"🚨 [위험] 시스템 장애 발생! (점수: {score:.4f})")
+        elif is_warning:
+          # 점수가 나빠지고 있는 상태
+          st.warning(f"⚠️ [주의] 이상 전조 증상 포착! (점수: {score:.4f})")
         else:
-          st.info(f"✅ 현재 상태: 정상 운영 중 (Index: {time_range[0] + i})")
+          st.info(f"✅ [정상] 운영 상태 양호 (점수: {score:.4f})")
 
-      # 4. 실시간 그래프 업데이트 (최근 100개)
+      # 4. 차트 업데이트 (실시간 점수 변화)
       with chart_box.container():
-        plot_data = pd.DataFrame({
-            'time': range(max(0, i-99), i+1),
-            'anomaly': history_preds[-100:]
+        plot_df = pd.DataFrame({
+        'step': range(max(0, i-99), i+1),
+        'score': scores_history[-100:]
         })
         
-        # Line 대신 Bar가 시인성이 훨씬 좋으므로 Bar 권장
-        fig = px.bar(plot_data, x='time', y='anomaly', 
-                     title=f"Real-time Anomaly Detection ({model_type})",
-                     range_y=[0, 1])
-        fig.update_traces(marker_color='#FF4B4B')
-        fig.update_layout(height=300, margin=dict(t=30, b=0))
-        st.plotly_chart(fig, use_container_width=True, key=f"ml_sim_{i}")
+        fig = px.line(plot_df, x='step', y='score',
+                      title=f"⚠️ {selected_machine} 사전 탐지 모니터링 (Score 기반)",
+                      labels={'score': 'Anomaly Score', 'step': 'Time Step'})
 
-        # 데이터 흐르는 속도 조절
-        time.sleep(0.05) 
+        # [핵심] 노란색 '주의' 영역 표시 (Rectangles)
+        # y0~y1 범위를 노란색 박스로 채워 전조 증상 구간을 시각화합니다.
+        fig.add_hrect(y0=DANGER_LINE, y1=WARNING_LINE, 
+                      fillcolor="yellow", opacity=0.3, line_width=0,
+                      annotation_text="Warning Zone (Pre-detection)", 
+                      annotation_position="top left")
+    
+        # [핵심] 빨간색 '위험' 영역 표시
+        fig.add_hrect(y0=plot_df['score'].min() - 0.1, y1=DANGER_LINE, 
+                      fillcolor="red", opacity=0.2, line_width=0,
+                      annotation_text="Danger Zone", 
+                      annotation_position="bottom left")
+    
+        # 기준선(Line) 추가
+        fig.add_hline(y=DANGER_LINE, line_dash="dash", line_color="red")
+        fig.add_hline(y=WARNING_LINE, line_dash="dot", line_color="orange")
+        
+        # y축 범위를 점수에 맞게 조정
+        fig.update_layout(yaxis=dict(range=[-0.5, 0.5])) 
+        st.plotly_chart(fig, use_container_width=True, key=f"pre_det_chart_{i}")
 
-    # 시뮬레이션 종료 후 최종 통계 요약
-    st.write(f"📊 분석 종료: 총 {sum(history_preds)}건의 이상 징후를 발견했습니다.")
+      time.sleep(0.05)
   
   # # [B] RandomForest / XGBoost (지도 학습) 처리
   # else:
