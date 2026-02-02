@@ -181,7 +181,7 @@ if 'ML' in model_type:
   st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
 
   # --- 🔍 분석 결과 출력 섹션 ---
-  st.write("### 🔍 Root Cause Analysis (Based on SHAP_ML.ipynb)")
+  st.write("### 🔍 Root Cause Analysis")
   if st.button("핵심 기여도 그래프 확인"):
     # 이미 계산된 결과를 바 차트로 표시
     fig = px.bar(analysis_results.head(15), 
