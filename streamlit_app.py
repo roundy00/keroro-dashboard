@@ -115,6 +115,51 @@ def trigger_alert_css():
         unsafe_allow_html=True
     )
 # ===============================================
+st.write("### 🧠 Deep Learning Root Cause Analysis")
+
+if st.button("코랩 서버에 분석 요청"):
+    # 1. 분석에 필요한 데이터 준비
+    # 전역 변수로 설정된 new_column_names와 selected_machine을 사용합니다.
+    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
+    
+    # 2. 서버에 보낼 봉투(Payload) 만들기
+    # 여기에 machine_name을 넣어야 코랩 서버가 어떤 모델을 꺼낼지 결정합니다.
+    payload = {
+        "machine_name": selected_machine, # 예: 'machine-1-1'
+        "window": target_data
+    }
+    
+    with st.spinner(f"{selected_machine} 분석 중... (GPU 가동)"):
+        try:
+            # 코랩에서 복사한 URL (매번 실행 시 바뀔 수 있으니 주의!)
+            COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+            
+            # 3. 서버로 전송 (json 파라미터에 payload를 넣습니다)
+            response = requests.post(COLAB_URL, json=payload)
+            
+            if response.status_code == 200:
+                res_data = response.json()
+                
+                # 서버에서 에러 메시지를 보냈는지 확인
+                if "error" in res_data:
+                    st.error(f"서버 연산 에러: {res_data['error']}")
+                else:
+                    importance = res_data["importance"]
+                    
+                    # 4. 결과 시각화
+                    imp_df = pd.DataFrame({
+                        'Feature': new_column_names,
+                        'Importance': importance
+                    }).sort_values(by='Importance', ascending=False).head(15)
+                    
+                    fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
+                                 title=f"DL Model Analysis: {selected_machine}")
+                    st.plotly_chart(fig)
+            else:
+                st.error(f"서버 응답 에러! 상태 코드: {response.status_code}")
+                
+        except Exception as e:
+            st.error(f"코랩 서버 연결 실패: {e}")
 
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
@@ -217,51 +262,7 @@ elif "DL" in model_type:
             
         time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
-st.write("### 🧠 Deep Learning Root Cause Analysis")
 
-if st.button("코랩 서버에 분석 요청"):
-    # 1. 분석에 필요한 데이터 준비
-    # 전역 변수로 설정된 new_column_names와 selected_machine을 사용합니다.
-    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
-    
-    # 2. 서버에 보낼 봉투(Payload) 만들기
-    # 여기에 machine_name을 넣어야 코랩 서버가 어떤 모델을 꺼낼지 결정합니다.
-    payload = {
-        "machine_name": selected_machine, # 예: 'machine-1-1'
-        "window": target_data
-    }
-    
-    with st.spinner(f"{selected_machine} 분석 중... (GPU 가동)"):
-        try:
-            # 코랩에서 복사한 URL (매번 실행 시 바뀔 수 있으니 주의!)
-            COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
-            
-            # 3. 서버로 전송 (json 파라미터에 payload를 넣습니다)
-            response = requests.post(COLAB_URL, json=payload)
-            
-            if response.status_code == 200:
-                res_data = response.json()
-                
-                # 서버에서 에러 메시지를 보냈는지 확인
-                if "error" in res_data:
-                    st.error(f"서버 연산 에러: {res_data['error']}")
-                else:
-                    importance = res_data["importance"]
-                    
-                    # 4. 결과 시각화
-                    imp_df = pd.DataFrame({
-                        'Feature': new_column_names,
-                        'Importance': importance
-                    }).sort_values(by='Importance', ascending=False).head(15)
-                    
-                    fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
-                                 title=f"DL Model Analysis: {selected_machine}")
-                    st.plotly_chart(fig)
-            else:
-                st.error(f"서버 응답 에러! 상태 코드: {response.status_code}")
-                
-        except Exception as e:
-            st.error(f"코랩 서버 연결 실패: {e}")
 
 with st.expander('Data'):
   st.write('**Raw Data**')
