@@ -63,13 +63,13 @@ df_input.rename(columns=rename_dict, inplace=True)
 
 # --- ✨ [핵심] 모델 선택 후 실행되는 동적 피처 추출 로직 ---
 @st.cache_resource
-def get_model_specific_features(_model, _X, _y, feature_names):
+def get_model_specific_features(_model, _X, _y, feature_names, machine_name):
   """선택된 모델에 최적화된 상위 피처 10개를 반환"""
   X_train = _X.copy()
   if 'timestamp' in X_train.columns:
     X_train = X_train.drop(columns=['timestamp'])
   
-  with st.spinner(f"선택하신 모델로 핵심 피처를 분석 중입니다..."):
+  with st.spinner(f"[{machine_name}] 핵심 피처를 분석 중입니다..."):
     # 학습
     _model.fit(X_train, _y)
     
@@ -153,7 +153,7 @@ def trigger_alert_css():
 if 'ML' in model_type:
 
   # 🚀 [노트북 로직 실행] 전처리 단계에서 SHAP 분석 수행
-  analysis_results = get_model_specific_features(selected_model_dict[model_type], X, y, new_column_names)
+  analysis_results = get_model_specific_features(selected_model_dict[model_type], X, y, new_column_names, selected_machine)
   
   # 분석된 중요 피처 Top 10 추출
   dynamic_features = analysis_results['Feature'].head(10).tolist()
