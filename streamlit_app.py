@@ -159,7 +159,7 @@ if 'ML' in model_type:
 
         # [핵심] 노란색 '주의' 영역 표시 (Rectangles)
         # y0~y1 범위를 노란색 박스로 채워 전조 증상 구간을 시각화합니다.
-        fig.add_hrect(y0=DANGER_LINE, y1=WARNING_LINE, 
+        fig.add_hrect(y0=DANGER_LINE, y1=WARNING_THRESHOLD, 
                       fillcolor="yellow", opacity=0.3, line_width=0,
                       annotation_text="Warning Zone (Pre-detection)", 
                       annotation_position="top left")
@@ -172,7 +172,7 @@ if 'ML' in model_type:
     
         # 기준선(Line) 추가
         fig.add_hline(y=DANGER_LINE, line_dash="dash", line_color="red")
-        fig.add_hline(y=WARNING_LINE, line_dash="dot", line_color="orange")
+        fig.add_hline(y=WARNING_THRESHOLD, line_dash="dot", line_color="orange")
         
         # y축 범위를 점수에 맞게 조정
         fig.update_layout(yaxis=dict(range=[-0.5, 0.5])) 
