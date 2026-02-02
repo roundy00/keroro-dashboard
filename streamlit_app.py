@@ -133,7 +133,7 @@ if 'ML' in model_type:
       avg_score = np.mean(recent_scores)
       
       # 2. 사전 탐지 로직 (Early Warning)
-      is_anomaly = score < ALERT_THRESHOLD
+      is_anomaly = score < DANGER_LINE
       is_warning = (score < WARNING_THRESHOLD) and (not is_anomaly)
       
       # 3. 화면 표시
