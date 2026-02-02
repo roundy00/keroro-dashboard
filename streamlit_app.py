@@ -144,6 +144,9 @@ if 'ML' in model_type:
     
     scores_history = []  # 점수 기록 저장용
     
+    if 'last_anomaly_time_ml' not in st.session_state:
+    st.session_state.last_anomaly_time_ml = 0
+    
     for i in range(st.session_state.current_idx, len(display_df)):
       st.session_state.current_idx = i
       current_row = display_df.iloc[i:i+1][new_column_names]
@@ -160,18 +163,29 @@ if 'ML' in model_type:
       # 2. 사전 탐지 로직 (Early Warning)
       is_anomaly = score < DANGER_LINE
       is_warning = (score < WARNING_THRESHOLD) and (not is_anomaly)
-      
+
+      if is_anomaly:
+        # 이상 징후가 발견된 시점의 시간을 세션에 박제
+        st.session_state.last_anomaly_time_ml = time.time()
+      # 마지막 이상 발생 후 10초(원하는 만큼 조절) 동안은 경고 유지
+      is_maintaining_alert = (time.time() - st.session_state.last_anomaly_time_ml) < 10
+    
       # 3. 화면 표시
       with status_box.container():
-        if is_anomaly:
-          if not st.session_state.mute_alert:
-            trigger_emergency_alert()
-            st.error(f"🚨 [위험] 장애 발생! (점수: {score:.4f})")
-          else:
-            st.warning(f"🔇 [음소거] 이상 감지 중 (점수: {score:.4f})")
-        elif is_warning:
-          # 점수가 나빠지고 있는 상태
+        if is_maintaining_alert and not st.session_state.mute_alert:
+          trigger_emergency_alert()  # 화면 흔들기/빨간색 유지
+          st.error(f"🚨 [위험] 시스템 장애 감지! (현재 점수: {score:.4f})")
+          
+          # 남은 유지 시간 표시 (선택 사항)
+          rem = int(10 - (time.time() - st.session_state.last_anomaly_time_ml))
+          if rem > 0:
+            st.toast(f"경고가 {rem}초간 더 유지됩니다.")
+            
+        # 2. 주의 단계 (점수가 낮아지는 중)
+        elif score < WARNING_THRESHOLD and not is_anomaly:
           st.warning(f"⚠️ [주의] 이상 전조 증상 포착! (점수: {score:.4f})")
+            
+        # 3. 정상
         else:
           st.info(f"✅ [정상] 운영 상태 양호 (점수: {score:.4f})")
 
