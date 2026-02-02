@@ -106,7 +106,7 @@ if 'ML' in model_type:
   model = selected_model_dict[model_type]
   
   # --- Isolation Forest 사전 탐지 파라미터 ---
-  ALERT_THRESHOLD = 0.0  # 실제 이상치 판단 기준 (이보다 낮으면 이상)
+  DANGER_LINE = 0.0    # 위험 기준 (이보다 낮으면 빨간색)
   WARNING_THRESHOLD = 0.05 # 사전 경보 기준 (주의 단계)
   WINDOW_SIZE = 5        # 점수 변화를 관찰할 윈도우
   
