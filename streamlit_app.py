@@ -111,7 +111,7 @@ if 'ML' in model_type:
   # 학습된 모델을 토대로 실시간 SHAP 분석 수행 : 별도의 함수 없이 메인 로직에서 바로 계산
   with st.spinner("학습된 모델의 판단 근거(SHAP)를 분석 중입니다..."):
     # 계산 속도를 위해 300~500개 샘플링 권장
-    X_sample = X_train.sample(min(300, len(X_train)), random_state=42)
+    X_sample = X.sample(min(300, len(X)), random_state=42)
     explainer = shap.TreeExplainer(model)
     shap_v = explainer.shap_values(X_sample)
     
