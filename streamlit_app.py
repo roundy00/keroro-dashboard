@@ -162,7 +162,7 @@ if 'ML' in model_type:
   model = selected_model_dict[model_type]
 
   # 학습
-  model.fit(X_all[dynamic_features], y_all)
+  model.fit(X[dynamic_features], y)
   
   # 예측
   display_df['pred'] = model.predict(display_df[dynamic_features])
