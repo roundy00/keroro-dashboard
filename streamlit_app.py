@@ -66,17 +66,7 @@ scale_pos_weight = (len(y) - sum(y)) / sum(y)
 selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
                        "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
 
-# Data Preparation : Model selection, time range setting
-# with st.sidebar:
-#   model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
 
-# with st.sidebar:
-#   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
-
-  # scale_pos_weight = (len(y) - sum(y)) / sum(y)
-  # selected_model_dict = {"ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
-  #                        "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42)}
-  
 # 슬라이더에서 선택된 범위만큼 데이터 자르기
 display_df = df_input.iloc[time_range[0] : time_range[1] + 1]
 
@@ -87,6 +77,7 @@ selected_info = {'machine':selected_machine,
                  'end time':time_range[1]}
 input_info = pd.DataFrame([selected_info])
 st.dataframe(input_info, hide_index=True)
+
 # ==========================================
 # 경고 발생 시 화면을 붉은색으로 깜빡이게 만드는 CSS입니다.
 def trigger_alert_css():
@@ -115,52 +106,8 @@ def trigger_alert_css():
         unsafe_allow_html=True
     )
 # ===============================================
-st.write("### 🧠 Deep Learning Root Cause Analysis")
 
-if st.button("코랩 서버에 분석 요청"):
-    # 1. 분석에 필요한 데이터 준비
-    # 전역 변수로 설정된 new_column_names와 selected_machine을 사용합니다.
-    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
-    
-    # 2. 서버에 보낼 봉투(Payload) 만들기
-    # 여기에 machine_name을 넣어야 코랩 서버가 어떤 모델을 꺼낼지 결정합니다.
-    payload = {
-        "machine_name": selected_machine, # 예: 'machine-1-1'
-        "window": target_data
-    }
-    
-    with st.spinner(f"{selected_machine} 분석 중... (GPU 가동)"):
-        try:
-            # 코랩에서 복사한 URL (매번 실행 시 바뀔 수 있으니 주의!)
-            COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
-            
-            # 3. 서버로 전송 (json 파라미터에 payload를 넣습니다)
-            response = requests.post(COLAB_URL, json=payload)
-            
-            if response.status_code == 200:
-                res_data = response.json()
-                
-                # 서버에서 에러 메시지를 보냈는지 확인
-                if "error" in res_data:
-                    st.error(f"서버 연산 에러: {res_data['error']}")
-                else:
-                    importance = res_data["importance"]
-                    
-                    # 4. 결과 시각화
-                    imp_df = pd.DataFrame({
-                        'Feature': new_column_names,
-                        'Importance': importance
-                    }).sort_values(by='Importance', ascending=False).head(15)
-                    
-                    fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
-                                 title=f"DL Model Analysis: {selected_machine}")
-                    st.plotly_chart(fig)
-            else:
-                st.error(f"서버 응답 에러! 상태 코드: {response.status_code}")
-                
-        except Exception as e:
-            st.error(f"코랩 서버 연결 실패: {e}")
-
+# --- 1. 머신러닝(ML) 모델인 경우 ---
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
   # 모델 학습
@@ -182,8 +129,69 @@ if 'ML' in model_type:
   
   st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
 
+# --- ML용 SHAP 분석 추가 ---
+  st.write("### 🔍 Root Cause Analysis (SHAP for ML)")
+  if st.button("ML 모델 원인 분석 시작"):
+      with st.spinner("SHAP 값을 계산 중입니다..."):
+          import shap
+          # ML은 데이터가 작으므로 마지막 100개 데이터로 로컬에서 직접 계산
+          explainer = shap.TreeExplainer(model)
+          shap_values = explainer.shap_values(display_df[priority_columns[1:]].iloc[-100:])
+          
+          # 클래스가 2개(정상/이상)인 경우 '이상(1)'에 대한 기여도 추출
+          if isinstance(shap_values, list): # RF/XGB 특성상 리스트로 나올 수 있음
+              sv = shap_values[1] 
+          else:
+              sv = shap_values
+
+          importance = np.abs(sv).mean(axis=0)
+          imp_df = pd.DataFrame({
+              'Feature': priority_columns[1:],
+              'Importance': importance
+          }).sort_values(by='Importance', ascending=False).head(15)
+
+          fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h', title="ML Feature Importance")
+          st.plotly_chart(fig)
+
+
 # 2. 딥러닝 모델인 경우 (API 호출)
 elif "DL" in model_type:
+    st.write("### 🧠 Deep Learning Root Cause Analysis")
+    if st.button("코랩 서버에 분석 요청"):
+        # DL은 38개 전체 피처를 사용 (new_column_names)
+        target_data = display_df[new_column_names].iloc[-100:].values.tolist()
+        
+        payload = {
+            "machine_name": selected_machine,
+            "window": target_data
+        }
+        
+        with st.spinner(f"코랩 GPU에서 {selected_machine} 분석 중..."):
+            try:
+                # 본인의 최신 ngrok 주소로 수정 필수
+                COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+                response = requests.post(COLAB_URL, json=payload, timeout=60)
+                
+                if response.status_code == 200:
+                    res_data = response.json()
+                    if "error" in res_data:
+                        st.error(f"서버 에러: {res_data['error']}")
+                    else:
+                        importance = res_data["importance"]
+                        imp_df = pd.DataFrame({
+                            'Feature': new_column_names,
+                            'Importance': importance
+                        }).sort_values(by='Importance', ascending=False).head(15)
+                        
+                        fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
+                                     title=f"DL Model Analysis: {selected_machine}",
+                                     color_discrete_sequence=['#FF4B4B']) # DL은 강조색
+                        st.plotly_chart(fig)
+                else:
+                    st.error(f"서버 응답 실패 (Code: {response.status_code})")
+            except Exception as e:
+                st.error(f"코랩 서버 연결 실패: {e}")
+  
     st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
     # 팀원에게 받은 서버 주소 적용
@@ -261,7 +269,6 @@ elif "DL" in model_type:
             break
             
         time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
-
 
 
 with st.expander('Data'):
