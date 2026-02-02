@@ -165,18 +165,19 @@ if 'ML' in model_type:
                       annotation_position="top left")
     
         # [핵심] 빨간색 '위험' 영역 표시
-        fig.add_hrect(y0=plot_df['score'].min() - 0.1, y1=DANGER_LINE, 
-                      fillcolor="red", opacity=0.2, line_width=0,
-                      annotation_text="Danger Zone", 
-                      annotation_position="bottom left")
+        fig.add_hrect(y0=-0.5, y1=DANGER_LINE,  # min() 대신 -0.5 같은 고정값 사용
+                  fillcolor="red", opacity=0.2, line_width=0,
+                  annotation_text="Danger Zone", 
+                  annotation_position="bottom left")
     
         # 기준선(Line) 추가
         fig.add_hline(y=DANGER_LINE, line_dash="dash", line_color="red")
         fig.add_hline(y=WARNING_THRESHOLD, line_dash="dot", line_color="orange")
         
         # y축 범위를 점수에 맞게 조정
-        fig.update_layout(yaxis=dict(range=[-0.4, 0.4], # 고정값 설정 (데이터 특성에 맞게 조절 가능)
-                    fixedrange=True    # 사용자가 마우스로 드래그해서 축이 변하는 것도 방지
+        fig.update_layout(yaxis=dict(range=[-0.5, 0.5], # 고정값 설정 (데이터 특성에 맞게 조절 가능)
+                    fixedrange=True,    # 사용자가 마우스로 드래그해서 축이 변하는 것도 방지
+                    autorange=False        # 데이터에 따라 축이 변하는 기능 강제 종료
                 ),
                 height=400,
                 margin=dict(t=50, b=20),
