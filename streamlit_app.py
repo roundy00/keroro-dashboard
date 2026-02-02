@@ -152,7 +152,7 @@ def trigger_alert_css():
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
   # 전체 피처로 임시 학습 데이터 준비
-  X_all = df_train.drop(columns=['timestamp','label'])
+  X_all = df_train.drop(columns=['label'])
   y_all = df_train['label']
 
   # 🚀 [노트북 로직 실행] 전처리 단계에서 SHAP 분석 수행
@@ -188,9 +188,9 @@ if 'ML' in model_type:
   st.write("### 🔍 Root Cause Analysis")
   if st.button("핵심 기여도 그래프 확인"):
     # 이미 계산된 결과를 바 차트로 표시
-    fig = px.bar(analysis_results.head(15)[::-1], 
+    fig = px.bar(analysis_results.head(10)[::-1], 
                  x='Importance', y='Feature', orientation='h',
-                 title="모델이 판단한 서버 이상 징후 주요 원인",
+                 title="모델 분석 기반 서버 이상 징후 주요 원인",
                  color='Importance', color_continuous_scale='Blues')
     st.plotly_chart(fig)
 
@@ -222,7 +222,7 @@ elif "DL" in model_type:
             imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
 
             # 3. 중요도 순으로 정렬 후 상위 15개 추출
-            imp_df = imp_df.sort_values(by='Importance', ascending=False).head(15)
+            imp_df = imp_df.sort_values(by='Importance', ascending=False).head(10)
         
             fig = px.bar(imp_df[::-1], x='Importance', y='Feature', orientation='h',
                          title=f"DL Model Analysis: {selected_machine}",
