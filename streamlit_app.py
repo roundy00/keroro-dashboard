@@ -111,28 +111,82 @@ if 'ML' in model_type:
       # 정상 데이터(df_train)로 학습
       model.fit(X) 
         
-    # 예측: 1(정상), -1(이상)으로 출력됨 -> 이를 0(정상), 1(이상)로 변환
-    raw_preds = model.predict(display_df[new_column_names])
-    display_df['pred'] = [1 if p == -1 else 0 for p in raw_preds]
+    # --- 실시간 시뮬레이션 UI 공간 확보 ---
+    status_box = st.empty()
+    alert_box = st.empty()
+    chart_box = st.empty()
+    
+    # 데이터를 누적하며 그리기 위한 리스트
+    history_preds = []
+    
+    # [핵심] 선택한 시간 범위 데이터를 한 줄씩 읽으며 시뮬레이션
+    for i in range(len(display_df)):
+      current_row = display_df.iloc[i:i+1] # 현재 시점 데이터
+      current_features = current_row[new_column_names]
       
-  # [B] RandomForest / XGBoost (지도 학습) 처리
-  else:
-    y = df_train['label'] # 지도학습에 필요한 라벨
-    with st.spinner(f"[{selected_machine}] {model_type} 학습 중..."):
-        model.fit(X, y)
-    display_df['pred'] = model.predict(display_df[new_column_names])
+      # 1. 예측 수행
+      if model_type == "ML (IsolationForest)":
+        p = model.predict(current_features)[0]
+        pred = 1 if p == -1 else 0
+      else:
+        pred = model.predict(current_features)[0]
+      
+      history_preds.append(pred)
+      
+      # 2. 알림 제어 (최근 5개 중 이상이 있으면 경고)
+      with alert_box.container():
+        if pred == 1:
+          trigger_alert_css()
+          st.toast(f"🚨 {selected_machine}: 이상 수치 감지!")
+        else:
+          st.empty()
 
-  # --- 시각화 섹션 ---
-  # 1. 이상 탐지 결과 알림 (깜빡이 효과)
-  if display_df['pred'].sum() > 0:
-    trigger_alert_css()
-    st.error(f"⚠️ 현재 범위 내에서 {int(display_df['pred'].sum())}건의 이상 징후가 포착되었습니다!")
+      # 3. 상태 표시
+      with status_box.container():
+        if pred == 1:
+          st.error(f"⚠️ 현재 상태: 이상 발생 (Index: {time_range[0] + i})")
+        else:
+          st.info(f"✅ 현재 상태: 정상 운영 중 (Index: {time_range[0] + i})")
 
-  # 2. 결과 그래프
-  st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
-  pred_fig = px.line(display_df, x='timestamp', y='pred', title="Anomaly Detection Timeline")
-  pred_fig.update_traces(line_color='#FF0000', line_width=2)
-  st.plotly_chart(pred_fig, use_container_width=True)
+      # 4. 실시간 그래프 업데이트 (최근 100개)
+      with chart_box.container():
+        plot_data = pd.DataFrame({
+            'time': range(max(0, i-99), i+1),
+            'anomaly': history_preds[-100:]
+        })
+        
+        # Line 대신 Bar가 시인성이 훨씬 좋으므로 Bar 권장
+        fig = px.bar(plot_data, x='time', y='anomaly', 
+                     title=f"Real-time Anomaly Detection ({model_type})",
+                     range_y=[0, 1])
+        fig.update_traces(marker_color='#FF4B4B')
+        fig.update_layout(height=300, margin=dict(t=30, b=0))
+        st.plotly_chart(fig, use_container_width=True, key=f"ml_sim_{i}")
+
+        # 데이터 흐르는 속도 조절
+        time.sleep(0.05) 
+
+    # 시뮬레이션 종료 후 최종 통계 요약
+    st.write(f"📊 분석 종료: 총 {sum(history_preds)}건의 이상 징후를 발견했습니다.")
+  
+  # # [B] RandomForest / XGBoost (지도 학습) 처리
+  # else:
+  #   y = df_train['label'] # 지도학습에 필요한 라벨
+  #   with st.spinner(f"[{selected_machine}] {model_type} 학습 중..."):
+  #       model.fit(X, y)
+  #   display_df['pred'] = model.predict(display_df[new_column_names])
+
+  # # --- 시각화 섹션 ---
+  # # 1. 이상 탐지 결과 알림 (깜빡이 효과)
+  # if display_df['pred'].sum() > 0:
+  #   trigger_alert_css()
+  #   st.error(f"⚠️ 현재 범위 내에서 {int(display_df['pred'].sum())}건의 이상 징후가 포착되었습니다!")
+
+  # # 2. 결과 그래프
+  # st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
+  # pred_fig = px.line(display_df, x='timestamp', y='pred', title="Anomaly Detection Timeline")
+  # pred_fig.update_traces(line_color='#FF0000', line_width=2)
+  # st.plotly_chart(pred_fig, use_container_width=True)
 
   # 3. SHAP 원인 분석 (선택 사항)
   # Isolation Forest도 Tree 기반이라 TreeExplainer 사용 가능
