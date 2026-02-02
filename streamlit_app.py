@@ -90,7 +90,7 @@ display_df = df_input.iloc[start_point:]
 # 메인 페이지에 현재 선택 정보 보여주기
 selected_info = {'Machine':selected_machine,
                  'Model':model_type,
-                 'Statis': 'Running'}
+                 'Status': 'Running'}
 input_info = pd.DataFrame([selected_info])
 st.dataframe(input_info, hide_index=True)
 
