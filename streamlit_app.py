@@ -31,6 +31,9 @@ with st.sidebar:
 df_train = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_test.csv')
 df_input = pd.read_csv(f'https://raw.githubusercontent.com/roundy00/keroro-dashboard/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{selected_machine}/{selected_machine}_train.csv')
 
+with st.sidebar:
+  model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
+
 new_column_names = [
   'cpu_r', 'load_1', 'load_5', 'load_15', 'mem_shmem', 'mem_u', 'mem_u_e', 'total_mem',
   'disk_q', 'disk_r', 'disk_rb', 'disk_svc', 'disk_u', 'disk_w', 'disk_wa', 'disk_wb',
@@ -43,20 +46,40 @@ rename_dict = {f'col_{i}': new_column_names[i] for i in range(len(new_column_nam
 df_train.rename(columns=rename_dict, inplace=True)
 df_input.rename(columns=rename_dict, inplace=True)
 
-priority_columns = [
-  'timestamp', 'cpu_r', 'load_1', 'load_5', 'mem_u',
-  'disk_q', 'disk_r', 'disk_w', 'disk_u', 'eth1_fi', 'eth1_fo','tcp_timeouts']
+# ===============================================================================
 
-priority_columns_train = priority_columns + ['label']
+# priority_columns = [
+#   'timestamp', 'cpu_r', 'load_1', 'load_5', 'mem_u',
+#   'disk_q', 'disk_r', 'disk_w', 'disk_u', 'eth1_fi', 'eth1_fo','tcp_timeouts']
 
-with st.sidebar:
-  model_type = st.sidebar.radio('분석 모델 종류', ["ML (RandomForest)","ML (XGBoost)","DL (OmniAnomaly)", "DL (LSTM-NDT)", "DL (IMDiffusion)", "DL (Anomaly Transformer)", "DL (Pi-Transformer)"])
+# priority_columns_train = priority_columns + ['label']
 
-if 'ML' in model_type:
-  df_train = df_train[priority_columns_train]
-  df_input = df_input[priority_columns]
-else:
-  pass
+# if 'ML' in model_type:
+#   df_train = df_train[priority_columns_train]
+#   df_input = df_input[priority_columns]
+# else:
+#   pass
+# --- ✨ [핵심] 모델 선택 후 실행되는 동적 피처 추출 로직 ---
+@st.cache_resource
+def get_model_specific_features(_model, _X, _y, feature_names):
+  """선택된 모델에 최적화된 상위 피처 10개를 반환"""
+  with st.spinner(f"선택하신 모델로 핵심 피처를 분석 중입니다..."):
+    # 학습
+    _model.fit(_X, _y)
+    
+    # SHAP 계산 (계산 속도를 위해 500개 샘플링)
+    explainer = shap.TreeExplainer(_model)
+    X_sample = _X.sample(min(500, len(_X)), random_state=42)
+    shap_v = explainer.shap_values(X_sample)
+    
+    if isinstance(shap_v, list): sv = shap_v[1] # RF/XGB 분류 대응
+    else: sv = shap_v
+    
+    importance = np.abs(sv).mean(axis=0)
+    feat_imp = pd.DataFrame({'f': feature_names, 'i': importance})
+    top_10 = feat_imp.sort_values(by='i', ascending=False).head(10)['f'].tolist()
+    return top_10
+# ===============================================================================
 
 with st.sidebar:
   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
@@ -111,16 +134,26 @@ def trigger_alert_css():
 
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
-  # 모델 학습
+  # 전체 피처로 임시 학습 데이터 준비
+  X_all = df_train.drop(columns=['label'])
+  y_all = df_train['label']
+  
+  # 선택된 모델 객체 가져오기
   model = selected_model_dict[model_type]
-  X_features = priority_columns[1:] 
-  model.fit(X[X_features], y)
+  
+  # 🚀 모델에 따른 동적 피처 추출
+  dynamic_features = get_model_specific_features(model, X_all, y_all, new_column_names)
+
+  # 전체 앱에서 사용할 priority_columns 업데이트
+  priority_columns = ['timestamp'] + dynamic_features
+ 
+  model.fit(X_all[dynamic_features], y_all)
   
   # 예측
-  display_df['pred'] = model.predict(display_df)
+  display_df['pred'] = model.predict(display_df[dynamic_features])
   
   # 예측값 시각화
-  st.write("### 🚨 이상 탐지 결과 (Prediction)")
+  st.write(f"### 🚨 이상 탐지 결과 ({model_type})")
   pred_fig = px.line(display_df, x = 'timestamp', y = 'pred')
   pred_fig.update_traces(line_color='#FF0000', line_width=2)
   pred_fig.update_layout(
@@ -131,70 +164,35 @@ if 'ML' in model_type:
   
   st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
 
-  # --- ML용 SHAP 분석 추가 ---
-  st.write("### 🔍 Root Cause Analysis (SHAP for ML)")
-  if st.button("ML 모델 원인 분석 시작"):
-    with st.spinner("SHAP 값을 계산 중입니다..."):
-      
-      # ML은 데이터가 작으므로 마지막 100개 데이터로 로컬에서 직접 계산
-      explainer = shap.TreeExplainer(model)
-      shap_values = explainer.shap_values(display_df[priority_columns[1:]].iloc[-100:])
-      
-      # 클래스가 2개(정상/이상)인 경우 '이상(1)'에 대한 기여도 추출
-      if isinstance(shap_values, list): # RF/XGB 특성상 리스트로 나올 수 있음
-        sv = shap_values[1] 
-      else:
-        sv = shap_values
+  # --- ML용 SHAP 분석 ---
+    st.write("### 🔍 Root Cause Analysis (SHAP for ML)")
+    if st.button("ML 모델 원인 분석 시작"):
+        with st.spinner("SHAP 값을 계산 중입니다..."):
+            # 예측에 사용한 것과 동일한 10개 피처 데이터 추출
+            shap_data = display_df[dynamic_features].iloc[-100:]
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(shap_data)
+            
+            if isinstance(shap_values, list): sv = shap_values[1] 
+            else: sv = shap_values
 
-      importance = np.abs(sv).mean(axis=0)
-      importance = np.array(importance).flatten()
-      
-      imp_df = pd.DataFrame({
-          'Feature': priority_columns[1:],
-          'Importance': importance
-      }).sort_values(by='Importance', ascending=False).head(15)
+            importance = np.abs(sv).mean(axis=0).flatten()
+            
+            # [수정] dynamic_features와 importance의 길이를 10개로 맞춤
+            imp_df = pd.DataFrame({
+                'Feature': dynamic_features,
+                'Importance': importance
+            }).sort_values(by='Importance', ascending=False)
 
-      fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h', title="ML Feature Importance")
-      st.plotly_chart(fig)
+            fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h', title="ML Feature Importance")
+            st.plotly_chart(fig)
+
 
 # 2. 딥러닝 모델인 경우 (API 호출)
 elif "DL" in model_type:
-  st.write("### 🧠 Deep Learning Root Cause Analysis")
-  if st.button("코랩 서버에 분석 요청"):
-    # DL은 38개 전체 피처를 사용 (new_column_names)
-    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
-        
-    payload = {
-        "machine_name": selected_machine,
-        "window": target_data
-    }
-        
-    with st.spinner(f"코랩 GPU에서 {selected_machine} 분석 중..."):
-      try:
-        # 본인의 최신 ngrok 주소로 수정 필수
-        COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
-        response = requests.post(COLAB_URL, json=payload, timeout=60)
-        
-        if response.status_code == 200:
-          res_data = response.json()
-          if "error" in res_data:
-            st.error(f"서버 에러: {res_data['error']}")
-          else:
-            importance = res_data["importance"]
-            imp_df = pd.DataFrame({
-                'Feature': new_column_names,
-                'Importance': importance
-            }).sort_values(by='Importance', ascending=False).head(15)
-            
-            fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
-                         title=f"DL Model Analysis: {selected_machine}",
-                         color_discrete_sequence=['#FF4B4B']) # DL은 강조색
-            st.plotly_chart(fig)
-        else:
-          st.error(f"서버 응답 실패 (Code: {response.status_code})")
-      except Exception as e:
-        st.error(f"코랩 서버 연결 실패: {e}")
-  
+  # DL일 때는 dynamic_features를 전체 피처로 설정하여 시각화 에러 방지
+  dynamic_features = new_column_names
+
   st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
   # 팀원에게 받은 서버 주소 적용
@@ -273,26 +271,52 @@ elif "DL" in model_type:
         
     time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
+  st.write("### 🧠 Deep Learning Root Cause Analysis")
+  if st.button("코랩 서버에 분석 요청"):
+    # DL은 38개 전체 피처를 사용 (new_column_names)
+    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
+        
+    payload = {
+        "machine_name": selected_machine,
+        "window": target_data
+    }
+        
+    with st.spinner(f"코랩 GPU에서 {selected_machine} 분석 중..."):
+      try:
+        # 본인의 최신 ngrok 주소로 수정 필수
+        COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+        response = requests.post(COLAB_URL, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+          res_data = response.json()
+          if "error" in res_data:
+            st.error(f"서버 에러: {res_data['error']}")
+          else:
+            importance = res_data["importance"]
+            imp_df = pd.DataFrame({
+                'Feature': new_column_names,
+                'Importance': importance
+            }).sort_values(by='Importance', ascending=False).head(15)
+            
+            fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
+                         title=f"DL Model Analysis: {selected_machine}",
+                         color_discrete_sequence=['#FF4B4B']) # DL은 강조색
+            st.plotly_chart(fig)
+        else:
+          st.error(f"서버 응답 실패 (Code: {response.status_code})")
+      except Exception as e:
+        st.error(f"코랩 서버 연결 실패: {e}")
 
 with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
 
+# --- 공통 시각화 (변수명 충돌 해결) ---
 with st.expander('Feature visualization'):
-  # 시각화할 컬럼들 리스트
-  viz_cols = ['cpu_r', 'disk_r', 'mem_u', 'tcp_timeouts']
-  
-  for col in viz_cols:
-    # 1. Plotly로 라인 차트 생성
-    fig = px.line(display_df, x='timestamp', y=col, title=f'Server {col} Over Time')
+    # [수정] 분석 결과인 dynamic_features 중 상위 4개를 자동으로 보여줌
+    viz_cols = dynamic_features[:4] 
     
-    # 2. 상호작용(줌, 팬) 비활성화 설정
-    fig.update_layout(
-        xaxis=dict(fixedrange=True), # X축 고정
-        yaxis=dict(fixedrange=True), # Y축 고정
-        dragmode=False,               # 마우스 드래그 비활성화
-        hovermode='x'                # 마우스를 올렸을 때 값만 보여줌
-    )
-    
-    # 3. Streamlit에 출력 (config에서 도구 모음도 숨김)
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    for col in viz_cols:
+        fig = px.line(display_df, x='timestamp', y=col, title=f'🔥 [Top Influence] {col} Over Time')
+        fig.update_layout(xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True), dragmode=False, hovermode='x')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
