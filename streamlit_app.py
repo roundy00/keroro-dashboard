@@ -218,11 +218,8 @@ elif "DL" in model_type:
           if "error" in res_data:
             st.error(f"서버 에러: {res_data['error']}")
           else:
-            importance = res_data["importance"]
-            imp_df = pd.DataFrame({
-                'Feature': new_column_names,
-                'Importance': importance
-            }).sort_values(by='Importance', ascending=False).head(15)
+            importance_dict = res_data["importance"]
+            imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
             
             fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
                          title=f"DL Model Analysis: {selected_machine}",
