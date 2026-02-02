@@ -101,7 +101,7 @@ def get_model_specific_features(_model, _X, _y, feature_names):
 with st.sidebar:
   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
   
-X = df_train.drop(labels = 'label', axis=1) # 학습-문제데이터
+X = df_train.drop(labels = ['timestamp','label'], axis=1) # 학습-문제데이터
 y = df_train.label # 학습-정답데이터
 
 scale_pos_weight = (len(y) - sum(y)) / sum(y)
@@ -151,12 +151,9 @@ def trigger_alert_css():
 
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
-  # 전체 피처로 임시 학습 데이터 준비
-  X_all = df_train.drop(columns=['label','timestamp'], errors='ignore')
-  y_all = df_train['label']
 
   # 🚀 [노트북 로직 실행] 전처리 단계에서 SHAP 분석 수행
-  analysis_results = get_model_specific_features(selected_model_dict[model_type], X_all, y_all, new_column_names)
+  analysis_results = get_model_specific_features(selected_model_dict[model_type], X, y, new_column_names)
   
   # 분석된 중요 피처 Top 10 추출
   dynamic_features = analysis_results['Feature'].head(10).tolist()
