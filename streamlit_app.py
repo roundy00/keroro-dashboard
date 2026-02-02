@@ -59,6 +59,8 @@ df_input.rename(columns=rename_dict, inplace=True)
 #   df_input = df_input[priority_columns]
 # else:
 #   pass
+
+
 # --- ✨ [핵심] 모델 선택 후 실행되는 동적 피처 추출 로직 ---
 @st.cache_resource
 def get_model_specific_features(_model, _X, _y, feature_names):
@@ -72,14 +74,20 @@ def get_model_specific_features(_model, _X, _y, feature_names):
     X_sample = _X.sample(min(500, len(_X)), random_state=42)
     shap_v = explainer.shap_values(X_sample)
     
-    if isinstance(shap_v, list): sv = shap_v[1] # RF/XGB 분류 대응
-    else: sv = shap_v
+    if isinstance(shap_v, list):
+      sv = shap_v[1] # RF/XGB 분류 대응
+    elif len(shap_v.shape) == 3:
+      sv = shap_v[:, :, 1]
+    else:
+      sv = shap_v
     
     importance = np.abs(sv).mean(axis=0).flatten()
+
+    actual_feature_names = _X.columns.tolist()
     
     # 6. 결과를 데이터프레임으로 정리
     analysis_df = pd.DataFrame({
-        'Feature': feature_names,
+        'Feature': actual_feature_names,
         'Importance': importance
     }).sort_values(by='Importance', ascending=False)
 
