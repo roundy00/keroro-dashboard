@@ -75,10 +75,15 @@ def get_model_specific_features(_model, _X, _y, feature_names):
     if isinstance(shap_v, list): sv = shap_v[1] # RF/XGB 분류 대응
     else: sv = shap_v
     
-    importance = np.abs(sv).mean(axis=0)
-    feat_imp = pd.DataFrame({'f': feature_names, 'i': importance})
-    top_10 = feat_imp.sort_values(by='i', ascending=False).head(10)['f'].tolist()
-    return top_10
+    importance = np.abs(sv).mean(axis=0).flatten()
+    
+    # 6. 결과를 데이터프레임으로 정리
+    analysis_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
+
+    return analysis_df
 # ===============================================================================
 
 with st.sidebar:
@@ -137,12 +142,15 @@ if 'ML' in model_type:
   # 전체 피처로 임시 학습 데이터 준비
   X_all = df_train.drop(columns=['label'])
   y_all = df_train['label']
+
+  # 🚀 [노트북 로직 실행] 전처리 단계에서 SHAP 분석 수행
+  analysis_results = get_model_specific_features(selected_model_dict[model_type], X_all, y_all, new_column_names)
+  
+  # 분석된 중요 피처 Top 10 추출
+  dynamic_features = analysis_results['Feature'].head(10).tolist()
   
   # 선택된 모델 객체 가져오기
   model = selected_model_dict[model_type]
-  
-  # 🚀 모델에 따른 동적 피처 추출
-  dynamic_features = get_model_specific_features(model, X_all, y_all, new_column_names)
 
   # 전체 앱에서 사용할 priority_columns 업데이트
   priority_columns = ['timestamp'] + dynamic_features
@@ -164,28 +172,15 @@ if 'ML' in model_type:
   
   st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
 
-  # --- ML용 SHAP 분석 ---
-  st.write("### 🔍 Root Cause Analysis (SHAP for ML)")
-  if st.button("ML 모델 원인 분석 시작"):
-    with st.spinner("SHAP 값을 계산 중입니다..."):
-      # 예측에 사용한 것과 동일한 10개 피처 데이터 추출
-      shap_data = display_df[dynamic_features].iloc[-100:]
-      explainer = shap.TreeExplainer(model)
-      shap_values = explainer.shap_values(shap_data)
-      
-      if isinstance(shap_values, list): sv = shap_values[1] 
-      else: sv = shap_values
-
-      importance = np.abs(sv).mean(axis=0).flatten()
-      
-      # [수정] dynamic_features와 importance의 길이를 10개로 맞춤
-      imp_df = pd.DataFrame({
-          'Feature': dynamic_features,
-          'Importance': importance
-      }).sort_values(by='Importance', ascending=False)
-
-      fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h', title="ML Feature Importance")
-      st.plotly_chart(fig)
+  # --- 🔍 분석 결과 출력 섹션 ---
+  st.write("### 🔍 Root Cause Analysis (Based on SHAP_ML.ipynb)")
+  if st.button("핵심 기여도 그래프 확인"):
+    # 이미 계산된 결과를 바 차트로 표시
+    fig = px.bar(analysis_results.head(15), 
+                 x='Importance', y='Feature', orientation='h',
+                 title="모델이 판단한 서버 이상 징후 주요 원인",
+                 color='Importance', color_continuous_scale='Blues')
+    st.plotly_chart(fig)
 
 
 # 2. 딥러닝 모델인 경우 (API 호출)
