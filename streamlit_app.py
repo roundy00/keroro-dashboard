@@ -73,31 +73,41 @@ st.dataframe(input_info, hide_index=True)
 
 # ==========================================
 # 경고 발생 시 화면을 붉은색으로 깜빡이게 만드는 CSS입니다.
-def trigger_alert_css():
+def trigger_emergency_alert():
+  # 화면 전체 배경을 붉게 만들고 흔드는 애니메이션
   st.markdown(
-        """
-        <style>
-        @keyframes blinker {
-            50% { opacity: 0; }
-        }
-        .emergency-alert {
-            background-color: #FF0000;
-            color: white;
-            padding: 20px;
-            text-align: center;
-            font-size: 30px;
-            font-weight: bold;
-            border-radius: 10px;
-            animation: blinker 0.5s linear infinite;
-            margin-bottom: 20px;
-        }
-        </style>
-        <div class="emergency-alert">
-            🚨 EMERGENCY: ANOMALY DETECTED 🚨
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+      """
+      <style>
+      @keyframes shake {
+          0% { transform: translate(1px, 1px) rotate(0deg); }
+          10% { transform: translate(-1px, -2px) rotate(-1deg); }
+          30% { transform: translate(3px, 2px) rotate(0deg); }
+          50% { transform: translate(-1px, 2px) rotate(1deg); }
+          100% { transform: translate(1px, -2px) rotate(-1deg); }
+      }
+      .stApp {
+          animation: shake 0.5s infinite;
+          background-color: #440000 !important;
+      }
+      .extreme-alert {
+          background-color: #FF0000;
+          color: yellow;
+          padding: 30px;
+          text-align: center;
+          font-size: 50px;
+          font-weight: bold;
+          border: 10px solid yellow;
+          border-radius: 20px;
+      }
+      </style>
+      <div class="extreme-alert">
+          🚨🚨 SYSTEM CRITICAL: EMERGENCY 🚨🚨
+      </div>
+      """,
+      unsafe_allow_html=True
+  )
+  # 경보음 추가 (공개된 사이렌 사운드 링크 사용)
+  st.audio("https://www.soundjay.com/buttons/beep-01a.mp3", format="audio/mp3", autoplay=True)
 # ===============================================
 
 # 1. 머신러닝 모델인 경우
