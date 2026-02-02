@@ -50,7 +50,7 @@ df_input.rename(columns=rename_dict, inplace=True)
 with st.sidebar:
   time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
   
-X = df_train.drop(columns = ['timestamp','label'], axis=1) # 학습-문제데이터
+X = df_train.drop(columns = 'timestamp', axis=1) # 학습-문제데이터
 # y = df_train.label # 학습-정답데이터
 
 scale_pos_weight = (len(y) - sum(y)) / sum(y)
