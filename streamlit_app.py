@@ -54,7 +54,7 @@ X = df_train.drop(columns = 'timestamp', axis=1) # 학습-문제데이터
 # y = df_train.label # 학습-정답데이터
 
 # scale_pos_weight = (len(y) - sum(y)) / sum(y)
-selected_model_dict = {"ML (IsolationForest)": IsolationForest(contamination=0.01, random_state=42),
+selected_model_dict = {"ML (IsolationForest)": IsolationForest(contamination=0.03, random_state=42),
                        # "ML (RandomForest)" : RandomForestClassifier(class_weight='balanced',random_state = 42),
                        # "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42),
                        }
