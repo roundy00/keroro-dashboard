@@ -62,9 +62,6 @@ rename_dict = {f'col_{i}': new_column_names[i] for i in range(len(new_column_nam
 
 df_train.rename(columns=rename_dict, inplace=True)
 df_input.rename(columns=rename_dict, inplace=True)
-
-with st.sidebar:
-  time_range = st.select_slider('분석할 시간 범위', options = range(0, len(df_input)), value = (0,len(df_input)-1))
   
 X = df_train.drop(columns = 'timestamp', axis=1) # 학습-문제데이터
 # y = df_train.label # 학습-정답데이터
@@ -75,15 +72,15 @@ selected_model_dict = {"ML (IsolationForest)": IsolationForest(contamination=0.0
                        # "ML (XGBoost)": XGBClassifier(scale_pos_weight=scale_pos_weight, random_state=42),
                        }
 
-
+with st.sidebar:
+  start_point = st.number_input('시작 인덱스 설정', min_value=0, max_value=len(df_input)-1, value=0)
 # 슬라이더에서 선택된 범위만큼 데이터 자르기
-display_df = df_input.iloc[time_range[0] : time_range[1] + 1]
+display_df = df_input.iloc[start_point:]
 
 # 메인 페이지에 현재 선택 정보 보여주기
-selected_info = {'machine':selected_machine,
-                 'model':model_type,
-                 'start time':time_range[0],
-                 'end time':time_range[1]}
+selected_info = {'Machine':selected_machine,
+                 'Model':model_type,
+                 'Statis': 'Running'}
 input_info = pd.DataFrame([selected_info])
 st.dataframe(input_info, hide_index=True)
 
