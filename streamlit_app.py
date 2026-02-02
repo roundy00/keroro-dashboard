@@ -146,6 +146,8 @@ if 'ML' in model_type:
         sv = shap_values
 
       importance = np.abs(sv).mean(axis=0)
+      importance = np.array(importance).flatten()
+      
       imp_df = pd.DataFrame({
           'Feature': priority_columns[1:],
           'Importance': importance
