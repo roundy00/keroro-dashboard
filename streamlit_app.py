@@ -220,7 +220,10 @@ elif "DL" in model_type:
           else:
             importance_dict = res_data["importance"]
             imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
-            
+
+            # 3. 중요도 순으로 정렬 후 상위 15개 추출
+            imp_df = imp_df.sort_values(by='Importance', ascending=False).head(15)
+        
             fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
                          title=f"DL Model Analysis: {selected_machine}",
                          color_discrete_sequence=['#FF4B4B']) # DL은 강조색
