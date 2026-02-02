@@ -71,11 +71,11 @@ def get_model_specific_features(_model, _X, _y, feature_names):
   
   with st.spinner(f"선택하신 모델로 핵심 피처를 분석 중입니다..."):
     # 학습
-    _model.fit(_X, _y)
+    _model.fit(X_train, _y)
     
     # SHAP 계산 (계산 속도를 위해 500개 샘플링)
     explainer = shap.TreeExplainer(_model)
-    X_sample = _X.sample(min(500, len(_X)), random_state=42)
+    X_sample = _X.sample(min(500, len(X_train)), random_state=42)
     shap_v = explainer.shap_values(X_sample)
     
     if isinstance(shap_v, list):
@@ -87,7 +87,7 @@ def get_model_specific_features(_model, _X, _y, feature_names):
     
     importance = np.abs(sv).mean(axis=0).flatten()
 
-    actual_feature_names = _X.columns.tolist()
+    actual_feature_names = X_train.columns.tolist()
     
     # 6. 결과를 데이터프레임으로 정리
     analysis_df = pd.DataFrame({
@@ -152,7 +152,7 @@ def trigger_alert_css():
 # 1. 머신러닝 모델인 경우
 if 'ML' in model_type:
   # 전체 피처로 임시 학습 데이터 준비
-  X_all = df_train.drop(columns=['label'])
+  X_all = df_train.drop(columns=['label','timestamp'], errors='ignore')
   y_all = df_train['label']
 
   # 🚀 [노트북 로직 실행] 전처리 단계에서 SHAP 분석 수행
@@ -164,9 +164,7 @@ if 'ML' in model_type:
   # 선택된 모델 객체 가져오기
   model = selected_model_dict[model_type]
 
-  # 전체 앱에서 사용할 priority_columns 업데이트
-  priority_columns = ['timestamp'] + dynamic_features
- 
+  # 학습
   model.fit(X_all[dynamic_features], y_all)
   
   # 예측
