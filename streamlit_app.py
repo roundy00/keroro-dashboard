@@ -217,6 +217,35 @@ elif "DL" in model_type:
             
         time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
+st.write("### 🧠 Deep Learning Root Cause Analysis")
+if st.button("코랩 서버에 분석 요청"):
+    # 1. 최신 데이터 윈도우 추출 (100, 38)
+    # display_df에서 마지막 100행을 가져와 리스트로 변환
+    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
+    
+    with st.spinner("코랩 GPU에서 분석 중..."):
+        try:
+            # 코랩에서 출력된 ngrok 주소를 여기에 넣으세요
+            COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+            response = requests.post(COLAB_URL, json={"window": target_data})
+            
+            if response.status_code == 200:
+                importance = response.json()["importance"]
+                
+                # 데이터프레임 변환 후 시각화
+                imp_df = pd.DataFrame({
+                    'Feature': new_column_names,
+                    'Importance': importance
+                }).sort_values(by='Importance', ascending=False).head(15)
+                
+                fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
+                             title=f"DL Model Analysis: {selected_machine}")
+                st.plotly_chart(fig)
+            else:
+                st.error("서버 응답 에러!")
+        except Exception as e:
+            st.error(f"코랩 서버 연결 실패: {e}")
+
 with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
