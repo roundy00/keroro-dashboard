@@ -341,7 +341,7 @@ elif "DL" in model_type:
           # 🚨 마지막 이상 감지 시점으로부터 30초 이내라면 계속 경고창 표시
           if time.time() - st.session_state.last_anomaly_time < 30:
               with alert_box.container():
-                  trigger_alert_css()  # 빨간색 깜빡이 효과 유지
+                  trigger_emergency_alert()  # 빨간색 깜빡이 효과 유지
                   # 추가: 남은 시간 표시 (선택 사항)
                   remaining = int(30 - (time.time() - st.session_state.last_anomaly_time))
                   st.toast(f"🚨 이상 감지! 경고가 {remaining}초간 유지됩니다.")
