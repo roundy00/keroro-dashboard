@@ -152,7 +152,7 @@ if 'ML' in model_type:
         analysis_results = pd.DataFrame({'Feature': new_column_names, 'Importance': importance}).sort_values(by='Importance', ascending=False)
         
         st.write("### 🔍 Root Cause Analysis (주요 원인 지표)")
-        fig = px.bar(analysis_results.head(10), x='Importance', y='Feature', orientation='h', color='Importance', color_continuous_scale='Reds')
+        fig = px.bar(analysis_results.head(10)[::-1], x='Importance', y='Feature', orientation='h', color='Importance', color_continuous_scale='Reds')
         st.plotly_chart(fig, use_container_width=True)
   
 # ===============================================================================
