@@ -65,6 +65,10 @@ df_input.rename(columns=rename_dict, inplace=True)
 @st.cache_resource
 def get_model_specific_features(_model, _X, _y, feature_names):
   """선택된 모델에 최적화된 상위 피처 10개를 반환"""
+  X_train = _X.copy()
+  if 'timestamp' in X_train.columns:
+    X_train = X_train.drop(columns=['timestamp'])
+  
   with st.spinner(f"선택하신 모델로 핵심 피처를 분석 중입니다..."):
     # 학습
     _model.fit(_X, _y)
@@ -256,49 +260,55 @@ elif "DL" in model_type:
       response = requests.post(API_URL, json={"values": current_row})
       
       if response.status_code == 200:
-          res = response.json()
-          
-          if res['status'] == "ready":
-            # 결과값 업데이트
-            is_anomaly = res['is_anomaly']
-            score = res['score']
-            scores.append(score)
+        res = response.json()
+        
+        if res['status'] == "ready":
+          # 결과값 업데이트
+          is_anomaly = res['is_anomaly']
+          score = res['score']
+          scores.append(score)
 
-            # 🚨 이상 감지 시 '개요란한' 경고 발생
-            if is_anomaly:
+          # 🚨 이상 감지 시 '개요란한' 경고 발생
+          if is_anomaly:
+            st.session_state.last_anomaly_time = time.time()
+
+          # 🚨 마지막 이상 감지 시점으로부터 30초 이내라면 계속 경고창 표시
+          if time.time() - st.session_state.last_anomaly_time < 30:
               with alert_box.container():
-                  trigger_alert_css()  # 빨간색 깜빡이 효과
-                  st.snow()            # 눈 내리는 효과 추가 (옵션)
-            else:
-              alert_box.empty()        # 정상일 때는 경고창 제거
-            
-            # 상태 업데이트
-            with status_box.container():
-              # 서버에서 온 실제 threshold와 score를 직접 텍스트로 찍어봅니다.
-              current_threshold = res.get('threshold', 0.5)
-              current_score = res.get('score', 0.0)
-              
-              if is_anomaly:
-                st.error(f"🚨 이상 발생! 점수: {current_score:.6f} (임계치: {current_threshold:.6f})")
-              else:
-                # 점수가 임계치에 얼마나 근접했는지 보여줍니다.
-                st.info(f"✅ 정상 (점수: {current_score:.6f} / 임계치: {current_threshold:.6f})")
-            
-            # 차트 업데이트 (최근 100개 데이터)
-            with chart_box.container():
-              latest_scores = scores[-100:]
-              temp_df = pd.DataFrame({
-                  'step': range(len(scores) - len(latest_scores), len(scores)),
-                  'score': latest_scores
-              })
-              fig = px.line(temp_df, x='step', y='score', title="Real-time Anomaly Score (Last 100)")
-              # 임계치 선 추가 (main.py의 THRESHOLD 사용) 
-              fig.add_hline(y=res['threshold'], line_dash="dash", line_color="red")
-              st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
-          
+                  trigger_alert_css()  # 빨간색 깜빡이 효과 유지
+                  # 추가: 남은 시간 표시 (선택 사항)
+                  remaining = int(30 - (time.time() - st.session_state.last_anomaly_time))
+                  st.toast(f"🚨 이상 감지! 경고가 {remaining}초간 유지됩니다.")
           else:
-            # 데이터 수집 단계 (WIN_SIZE 100개 채우는 중) 
-            status_box.info(f"⏳ 서버 데이터 축적 중... ({res['progress']})")
+              alert_box.empty()
+          
+          # 상태 업데이트
+          with status_box.container():
+            # 서버에서 온 실제 threshold와 score를 직접 텍스트로 찍어봅니다.
+            current_threshold = res.get('threshold', 0.5)
+            current_score = res.get('score', 0.0)
+            
+            if is_anomaly:
+              st.error(f"🚨 이상 발생! 점수: {current_score:.6f} (임계치: {current_threshold:.6f})")
+            else:
+              # 점수가 임계치에 얼마나 근접했는지 보여줍니다.
+              st.info(f"✅ 정상 (점수: {current_score:.6f} / 임계치: {current_threshold:.6f})")
+          
+          # 차트 업데이트 (최근 100개 데이터)
+          with chart_box.container():
+            latest_scores = scores[-100:]
+            temp_df = pd.DataFrame({
+                'step': range(len(scores) - len(latest_scores), len(scores)),
+                'score': latest_scores
+            })
+            fig = px.line(temp_df, x='step', y='score', title="Real-time Anomaly Score (Last 100)")
+            # 임계치 선 추가 (main.py의 THRESHOLD 사용) 
+            fig.add_hline(y=res['threshold'], line_dash="dash", line_color="red")
+            st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
+        
+        else:
+          # 데이터 수집 단계 (WIN_SIZE 100개 채우는 중) 
+          status_box.info(f"⏳ 서버 데이터 축적 중... ({res['progress']})")
       
       else:
         st.error(f"서버 오류: {response.status_code}")
