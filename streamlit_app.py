@@ -22,8 +22,22 @@ machine_num = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
                     '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8', '2-9',
                     '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8', '3-9', '3-10', '3-11']
 
+# 경고 상태를 관리하기 위한 변수 초기화
+if 'mute_alert' not in st.session_state:
+    st.session_state.mute_alert = False
+  
 # Machine selection
 with st.sidebar:
+  st.header("Emergency Control")
+  
+  if st.button("🚨 경보 강제 종료 (Mute)"):
+    st.session_state.mute_alert = True
+    st.success("경보가 일시 중지되었습니다.")
+  
+  if st.button("🔄 경보 시스템 재가동"):
+    st.session_state.mute_alert = False
+    st.info("경보 시스템이 다시 활성화되었습니다.")
+      
   st.header('Monitoring Settings')
 
   selected_machine = st.sidebar.selectbox('대상 머신 선택', [f'machine-{i}' for i in machine_num])
@@ -107,7 +121,8 @@ def trigger_emergency_alert():
       unsafe_allow_html=True
   )
   # 경보음 추가 (공개된 사이렌 사운드 링크 사용)
-  st.audio("https://www.soundjay.com/buttons/beep-01a.mp3", format="audio/mp3", autoplay=True)
+  siren_url = "https://www.soundjay.com/mechanical/sounds/siren-1.mp3"
+  st.audio(siren_url, format="audio/mp3", autoplay=True)
 # ===============================================
 
 # 1. 머신러닝 모델인 경우
