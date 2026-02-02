@@ -174,7 +174,6 @@ if 'ML' in model_type:
       with status_box.container():
         if is_maintaining_alert and not st.session_state.mute_alert:
           trigger_emergency_alert()  # 화면 흔들기/빨간색 유지
-          st.error(f"🚨 [위험] 시스템 장애 감지! (현재 점수: {score:.4f})")
           
           # 남은 유지 시간 표시 (선택 사항)
           rem = int(10 - (time.time() - st.session_state.last_anomaly_time_ml))
