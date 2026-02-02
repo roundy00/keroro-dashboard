@@ -175,10 +175,16 @@ if 'ML' in model_type:
         fig.add_hline(y=WARNING_THRESHOLD, line_dash="dot", line_color="orange")
         
         # y축 범위를 점수에 맞게 조정
-        fig.update_layout(yaxis=dict(range=[-0.5, 0.5])) 
+        fig.update_layout(yaxis=dict(range=[-0.4, 0.4], # 고정값 설정 (데이터 특성에 맞게 조절 가능)
+                    fixedrange=True    # 사용자가 마우스로 드래그해서 축이 변하는 것도 방지
+                ),
+                height=400,
+                margin=dict(t=50, b=20),
+                transition_duration=50 # 선이 뚝뚝 끊기지 않고 부드럽게 흐르도록 설정
+            )
         st.plotly_chart(fig, use_container_width=True, key=f"pre_det_chart_{i}")
 
-      time.sleep(0.05)
+      time.sleep(0.1)
   
   # # [B] RandomForest / XGBoost (지도 학습) 처리
   # else:
