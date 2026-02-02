@@ -193,6 +193,42 @@ if 'ML' in model_type:
 
 # 2. 딥러닝 모델인 경우 (API 호출)
 elif "DL" in model_type:
+  st.write("### 🧠 Deep Learning Root Cause Analysis")
+  if st.button("코랩 서버에 분석 요청"):
+    # DL은 38개 전체 피처를 사용 (new_column_names)
+    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
+        
+    payload = {
+        "machine_name": selected_machine,
+        "window": target_data
+    }
+        
+    with st.spinner(f"코랩 GPU에서 {selected_machine} 분석 중..."):
+      try:
+        # 본인의 최신 ngrok 주소로 수정 필수
+        COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+        response = requests.post(COLAB_URL, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+          res_data = response.json()
+          if "error" in res_data:
+            st.error(f"서버 에러: {res_data['error']}")
+          else:
+            importance = res_data["importance"]
+            imp_df = pd.DataFrame({
+                'Feature': new_column_names,
+                'Importance': importance
+            }).sort_values(by='Importance', ascending=False).head(15)
+            
+            fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
+                         title=f"DL Model Analysis: {selected_machine}",
+                         color_discrete_sequence=['#FF4B4B']) # DL은 강조색
+            st.plotly_chart(fig)
+        else:
+          st.error(f"서버 응답 실패 (Code: {response.status_code})")
+      except Exception as e:
+        st.error(f"코랩 서버 연결 실패: {e}")
+
   # DL일 때는 dynamic_features를 전체 피처로 설정하여 시각화 에러 방지
   dynamic_features = new_column_names
 
@@ -274,42 +310,7 @@ elif "DL" in model_type:
         
     time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
-  st.write("### 🧠 Deep Learning Root Cause Analysis")
-  if st.button("코랩 서버에 분석 요청"):
-    # DL은 38개 전체 피처를 사용 (new_column_names)
-    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
-        
-    payload = {
-        "machine_name": selected_machine,
-        "window": target_data
-    }
-        
-    with st.spinner(f"코랩 GPU에서 {selected_machine} 분석 중..."):
-      try:
-        # 본인의 최신 ngrok 주소로 수정 필수
-        COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
-        response = requests.post(COLAB_URL, json=payload, timeout=60)
-        
-        if response.status_code == 200:
-          res_data = response.json()
-          if "error" in res_data:
-            st.error(f"서버 에러: {res_data['error']}")
-          else:
-            importance = res_data["importance"]
-            imp_df = pd.DataFrame({
-                'Feature': new_column_names,
-                'Importance': importance
-            }).sort_values(by='Importance', ascending=False).head(15)
-            
-            fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
-                         title=f"DL Model Analysis: {selected_machine}",
-                         color_discrete_sequence=['#FF4B4B']) # DL은 강조색
-            st.plotly_chart(fig)
-        else:
-          st.error(f"서버 응답 실패 (Code: {response.status_code})")
-      except Exception as e:
-        st.error(f"코랩 서버 연결 실패: {e}")
-
+  
 with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
