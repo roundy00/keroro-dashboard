@@ -165,27 +165,27 @@ if 'ML' in model_type:
   st.plotly_chart(pred_fig, use_container_width=True, config={'displayModeBar': False})
 
   # --- ML용 SHAP 분석 ---
-    st.write("### 🔍 Root Cause Analysis (SHAP for ML)")
-    if st.button("ML 모델 원인 분석 시작"):
-        with st.spinner("SHAP 값을 계산 중입니다..."):
-            # 예측에 사용한 것과 동일한 10개 피처 데이터 추출
-            shap_data = display_df[dynamic_features].iloc[-100:]
-            explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(shap_data)
-            
-            if isinstance(shap_values, list): sv = shap_values[1] 
-            else: sv = shap_values
+  st.write("### 🔍 Root Cause Analysis (SHAP for ML)")
+  if st.button("ML 모델 원인 분석 시작"):
+    with st.spinner("SHAP 값을 계산 중입니다..."):
+      # 예측에 사용한 것과 동일한 10개 피처 데이터 추출
+      shap_data = display_df[dynamic_features].iloc[-100:]
+      explainer = shap.TreeExplainer(model)
+      shap_values = explainer.shap_values(shap_data)
+      
+      if isinstance(shap_values, list): sv = shap_values[1] 
+      else: sv = shap_values
 
-            importance = np.abs(sv).mean(axis=0).flatten()
-            
-            # [수정] dynamic_features와 importance의 길이를 10개로 맞춤
-            imp_df = pd.DataFrame({
-                'Feature': dynamic_features,
-                'Importance': importance
-            }).sort_values(by='Importance', ascending=False)
+      importance = np.abs(sv).mean(axis=0).flatten()
+      
+      # [수정] dynamic_features와 importance의 길이를 10개로 맞춤
+      imp_df = pd.DataFrame({
+          'Feature': dynamic_features,
+          'Importance': importance
+      }).sort_values(by='Importance', ascending=False)
 
-            fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h', title="ML Feature Importance")
-            st.plotly_chart(fig)
+      fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h', title="ML Feature Importance")
+      st.plotly_chart(fig)
 
 
 # 2. 딥러닝 모델인 경우 (API 호출)
