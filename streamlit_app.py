@@ -149,6 +149,7 @@ if 'ML' in model_type:
       # 3. 화면 표시
       with status_box.container():
         if is_anomaly:
+          trigger_emergency_alert()
           st.error(f"🚨 [위험] 시스템 장애 발생! (점수: {score:.4f})")
         elif is_warning:
           # 점수가 나빠지고 있는 상태
