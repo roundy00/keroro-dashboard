@@ -46,21 +46,6 @@ rename_dict = {f'col_{i}': new_column_names[i] for i in range(len(new_column_nam
 df_train.rename(columns=rename_dict, inplace=True)
 df_input.rename(columns=rename_dict, inplace=True)
 
-# ===============================================================================
-
-# priority_columns = [
-#   'timestamp', 'cpu_r', 'load_1', 'load_5', 'mem_u',
-#   'disk_q', 'disk_r', 'disk_w', 'disk_u', 'eth1_fi', 'eth1_fo','tcp_timeouts']
-
-# priority_columns_train = priority_columns + ['label']
-
-# if 'ML' in model_type:
-#   df_train = df_train[priority_columns_train]
-#   df_input = df_input[priority_columns]
-# else:
-#   pass
-
-
 # --- ✨ [핵심] 모델 선택 후 실행되는 동적 피처 추출 로직 ---
 @st.cache_resource
 def get_model_specific_features(_model, _X, _y, feature_names, machine_name):
@@ -189,8 +174,9 @@ if 'ML' in model_type:
                  color='Importance', color_continuous_scale='Blues')
     st.plotly_chart(fig)
 
-
+# ===============================================================================
 # 2. 딥러닝 모델인 경우 (API 호출)
+
 elif "DL" in model_type:
   st.write("### 🧠 Deep Learning Root Cause Analysis")
   if st.button("코랩 서버에 분석 요청"):
@@ -216,7 +202,7 @@ elif "DL" in model_type:
             importance_dict = res_data["importance"]
             imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
 
-            # 3. 중요도 순으로 정렬 후 상위 15개 추출
+            # 3. 중요도 순으로 정렬 후 상위 10개 추출
             imp_df = imp_df.sort_values(by='Importance', ascending=False).head(10)
         
             fig = px.bar(imp_df[::-1], x='Importance', y='Feature', orientation='h',
