@@ -27,7 +27,17 @@ if 'mute_alert' not in st.session_state:
   st.session_state.mute_alert = False
 if 'current_idx' not in st.session_state:
   st.session_state.current_idx = 0
-  
+
+# --- [추가] SHAP 분석 주기를 관리하기 위한 세션 변수 ---
+if 'last_shap_time' not in st.session_state:
+  st.session_state.last_shap_time = 0
+
+# 자동 분석 활성화 체크박스 (사이드바 메뉴들 사이에 추가하세요)
+auto_dl_analyze = st.sidebar.checkbox("실시간 DL 원인 분석 활성화", value=True)
+
+DETECTION_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict"
+SHAP_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/analyze"
+
 # Machine selection
 with st.sidebar:
   st.header("Emergency Control")
@@ -270,52 +280,6 @@ if 'ML' in model_type:
 # 2. 딥러닝 모델인 경우 (API 호출)
 
 elif "DL" in model_type:
-  st.write("### 🧠 Deep Learning Root Cause Analysis")
-  
-  if st.button("코랩 서버에 분석 요청"):
-    # DL은 38개 전체 피처를 사용 (new_column_names)
-    target_data = display_df[new_column_names].iloc[-100:].values.tolist()
-        
-    payload = {
-        "machine_name": selected_machine,
-        "window": target_data
-    }
-        
-    with st.spinner(f"코랩 GPU에서 {selected_machine} 분석 중..."):
-      try:
-        # 본인의 최신 ngrok 주소로 수정 필수
-        COLAB_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
-        response = requests.post(COLAB_URL, json=payload, timeout=90)
-        
-        if response.status_code == 200:
-          res_data = response.json()
-          if res_data.get("status") == "success":
-            importance_dict = res_data["importance"]
-            
-            # 1. 데이터프레임 변환
-            imp_df = pd.DataFrame(list(importance_dict.items()), columns=['Feature', 'Importance'])
-            
-            # 2. 절대값 컬럼 생성 후 정렬 (순위 불일치 해결 핵심)
-            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
-            imp_df = imp_df.sort_values(by='Abs_Importance', ascending=False)
-            
-            # 3. 시각화 (상위 10개)
-            top_10 = imp_df.head(10).copy()
-            fig = px.bar(top_10[::-1], x='Abs_Importance', y='Feature', orientation='h',
-                         title="이상 징후 기여도 (SHAP Value)",
-                         color='Abs_Importance', color_continuous_scale='Reds')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # 세션 상태에 저장 (상세 뷰 연동)
-            st.session_state['dl_importance'] = imp_df
-          else:
-            st.error(f"분석 실패: {res_data.get('message')}")
-      except Exception as e:
-        st.error(f"코랩 서버 연결 실패: {e}")
-
-  # DL일 때는 dynamic_features를 전체 피처로 설정하여 시각화 에러 방지
-  dynamic_features = new_column_names
-
   st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
   # 팀원에게 받은 서버 주소 적용
@@ -397,10 +361,44 @@ elif "DL" in model_type:
     except Exception as e:
       st.error(f"연결 실패: {e}")
       break
-        
+
+    # ------------------ [여기서부터 SHAP 로직 추가] ------------------
+        if auto_dl_analyze:
+          current_time = time.time()
+          # 10초 주기로 SHAP 분석 서버 호출
+          if current_time - st.session_state.last_shap_time > 10:
+            # SHAP 분석에는 최신 100개의 시계열 데이터(Window)가 필요함
+            # df_input이 실시간으로 쌓이고 있다면 tail(100)을 사용
+            if len(df_input) >= 100:
+              target_window = df_input[new_column_names].tail(100).values.tolist()
+              
+              shap_payload = {
+                  "machine_name": selected_machine,
+                  "window": target_window
+              }
+              
+              try:
+                # SHAP 서버는 분석 시간이 걸리므로 timeout을 넉넉히 줌
+                shap_resp = requests.post(SHAP_URL, json=shap_payload, timeout=15)
+                
+                if shap_resp.status_code == 200:
+                  res_data = shap_resp.json()
+                  if res_data.get("status") == "success":
+                    # 1. 중요도 데이터 가공
+                    importance_dict = res_data["importance"]
+                    imp_df_new = pd.DataFrame(list(importance_dict.items()), 
+                                              columns=['Feature', 'Importance'])
+                    # 2. 절대값 기준으로 영향력 정렬
+                    imp_df_new['Abs_Importance'] = imp_df_new['Importance'].abs()
+                    st.session_state['dl_importance'] = imp_df_new.sort_values(by='Abs_Importance', ascending=False)
+                    
+                    st.session_state.last_shap_time = current_time
+                    # st.toast("💡 원인 분석 결과가 갱신되었습니다.") 
+              except Exception as e:
+                  # SHAP 서버 에러가 탐지 루프를 멈추지 않도록 예외 처리
+                  pass
     time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
-  
 with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
@@ -409,37 +407,14 @@ with st.expander('Data'):
 with st.expander('🔍 Top 5 Influential Features Detail View'):
     st.write("모델이 분석한 이상 징후 기여도 상위 5개 지표의 변화 추이입니다.")
     
-    # 1. 모델 종류(ML/DL)에 따라 상위 5개 컬럼 추출
     viz_cols = []
-    
-    if "ML" in model_type:
-        if 'analysis_results' in locals():
-            # ML 분석 결과에서 상위 5개 Feature 이름 가져오기
-            viz_cols = analysis_results.head(5)['Feature'].tolist()
-    
-    elif "DL" in model_type:
-        if 'imp_df' in locals():
-            # DL 분석 결과에서 상위 5개 Feature 이름 가져오기
-            viz_cols = imp_df.head(5)['Feature'].tolist()
-
-    # 2. 추출된 컬럼이 있다면 시각화 수행
-    if viz_cols:
-        # 화면을 너무 길게 쓰지 않도록 2열 레이아웃 구성 (선택 사항)
-        # col1, col2 = st.columns(2) 
+    if "DL" in model_type:
+        # 루프에서 10초마다 세션에 저장해주는 따끈따끈한 데이터를 가져옴
+        if 'dl_importance' in st.session_state:
+            viz_cols = st.session_state['dl_importance'].head(5)['Feature'].tolist()
         
+    # 추출된 컬럼 시각화 (기존 px.line 로직 그대로 사용)
+    if viz_cols:
         for idx, col in enumerate(viz_cols):
-            # 시각화: 시계열 라인 차트
-            fig = px.line(display_df, x='timestamp', y=col, 
-                          title=f'📍 [Top {idx+1}] {col} Trend Analysis',
-                          color_discrete_sequence=['#00CC96']) # 지표별 강조색
-            
-            # 차트 레이아웃 최적화 (가독성 향상)
-            fig.update_layout(
-                margin=dict(l=20, r=20, t=40, b=20),
-                height=350,
-                hovermode='x unified'
-            )
-            
+            fig = px.line(df_input.tail(100), y=col, title=f"Top {idx+1} 원인 지표: {col}")
             st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("💡 모델 분석을 먼저 수행하면 주요 지표 그래프가 여기에 표시됩니다.")
