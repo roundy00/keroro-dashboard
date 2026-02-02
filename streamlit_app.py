@@ -227,7 +227,10 @@ elif "DL" in model_type:
             fig = px.bar(imp_df, x='Importance', y='Feature', orientation='h',
                          title=f"DL Model Analysis: {selected_machine}",
                          color_discrete_sequence=['#FF4B4B']) # DL은 강조색
-            st.plotly_chart(fig)
+            
+            # 가독성을 위해 최상단에 큰 값이 오도록 정렬 유지
+            fig.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig, use_container_width=True)
         else:
           st.error(f"서버 응답 실패 (Code: {response.status_code})")
       except Exception as e:
