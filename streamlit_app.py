@@ -145,7 +145,7 @@ if 'ML' in model_type:
     scores_history = []  # 점수 기록 저장용
     
     if 'last_anomaly_time_ml' not in st.session_state:
-    st.session_state.last_anomaly_time_ml = 0
+      st.session_state.last_anomaly_time_ml = 0
     
     for i in range(st.session_state.current_idx, len(display_df)):
       st.session_state.current_idx = i
