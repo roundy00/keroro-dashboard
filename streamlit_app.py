@@ -35,9 +35,6 @@ if 'last_shap_time' not in st.session_state:
 # 자동 분석 활성화 체크박스 (사이드바 메뉴들 사이에 추가하세요)
 auto_dl_analyze = st.sidebar.checkbox("실시간 DL 원인 분석 활성화", value=True)
 
-DETECTION_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict"
-SHAP_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/analyze"
-
 # Machine selection
 with st.sidebar:
   st.header("Emergency Control")
