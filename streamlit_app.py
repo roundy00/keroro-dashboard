@@ -302,7 +302,7 @@ elif "DL" in model_type:
     
     try:
       # 🚨 서버에 현재 행 데이터를 보내고 결과를 받음 
-      response = requests.post(API_URL, json={"values": current_row}, timeout = 20)
+      response = requests.post(API_URL, json={"values": current_row}, timeout = 30)
       
       if response.status_code == 200:
         res = response.json()
@@ -364,9 +364,15 @@ elif "DL" in model_type:
         st.error(f"서버 오류: {response.status_code}")
         break
             
-    except Exception as e:
-      st.error(f"연결 실패: {e}")
-      break
+    # ✅ SSL/연결 에러 발생 시 앱이 꺼지지 않고 다음 데이터로 넘어가게 방어
+    except requests.exceptions.SSLError as ssl_e:
+      st.warning("⚠️ 보안 연결(SSL) 일시적 지연 발생. 재시도 중...")
+      time.sleep(1) # 잠시 대기 후 다음 루프로
+      continue
+    except requests.exceptions.RequestException as e:
+      st.error(f"통신 장애 발생: {e}")
+      time.sleep(1)
+      continue
 
 time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
