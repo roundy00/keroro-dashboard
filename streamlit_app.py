@@ -312,6 +312,20 @@ elif "DL" in model_type:
           score = res['score']
           scores.append(score)
 
+          # --- [통합된 SHAP 결과 처리] ---
+          # 서버에서 보낸 'reasons' 필드가 SHAP 분석 결과입니다.
+          if "reasons" in res and res["reasons"]:
+            # 서버 응답 형태: [{"feature": "name", "importance": value}, ...]
+            importance_data = res["reasons"]
+            imp_df = pd.DataFrame(importance_data)
+            
+            # 컬럼명 맞추기 및 절대값 정렬
+            imp_df.columns = ['Feature', 'Importance']
+            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+            
+            # 세션에 저장 (하단 expander 시각화용)
+            st.session_state['dl_importance'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
+
           # 🚨 이상 감지 시 '개요란한' 경고 발생
           if is_anomaly:
             st.session_state.last_anomaly_time = time.time()
@@ -397,41 +411,6 @@ elif "DL" in model_type:
       st.error(f"연결 실패: {e}")
       break
 
-# ------------------ [여기서부터 SHAP 로직 추가] ------------------
-    if auto_dl_analyze:
-      current_time = time.time()
-      # 10초 주기로 SHAP 분석 서버 호출
-      if current_time - st.session_state.last_shap_time > 10:
-        # SHAP 분석에는 최신 100개의 시계열 데이터(Window)가 필요함
-        # df_input이 실시간으로 쌓이고 있다면 tail(100)을 사용
-        if len(df_input) >= 100:
-          target_window = df_input[new_column_names].tail(100).values.tolist()
-          
-          shap_payload = {
-              "machine_name": selected_machine,
-              "window": target_window
-          }
-          
-          try:
-            # SHAP 서버는 분석 시간이 걸리므로 timeout을 넉넉히 줌
-            shap_resp = requests.post(SHAP_URL, json=shap_payload, timeout=15)
-            
-            if shap_resp.status_code == 200:
-              res_data = shap_resp.json()
-              if res_data.get("status") == "success":
-                # 1. 중요도 데이터 가공
-                importance_dict = res_data["importance"]
-                imp_df_new = pd.DataFrame(list(importance_dict.items()), 
-                                          columns=['Feature', 'Importance'])
-                # 2. 절대값 기준으로 영향력 정렬
-                imp_df_new['Abs_Importance'] = imp_df_new['Importance'].abs()
-                st.session_state['dl_importance'] = imp_df_new.sort_values(by='Abs_Importance', ascending=False)
-                
-                st.session_state.last_shap_time = current_time
-                # st.toast("💡 원인 분석 결과가 갱신되었습니다.") 
-          except Exception as e:
-              # SHAP 서버 에러가 탐지 루프를 멈추지 않도록 예외 처리
-              pass
 time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 
 with st.expander('Data'):
@@ -439,17 +418,12 @@ with st.expander('Data'):
   df_input
 
 # --- 공통 시각화 (모델이 선정한 주요 지표 Top 5 시각화) ---
+# for 루프가 완전히 종료된 후 위치 (들여쓰기 없음)
 with st.expander('🔍 Top 5 Influential Features Detail View'):
-    st.write("모델이 분석한 이상 징후 기여도 상위 5개 지표의 변화 추이입니다.")
-    
-    viz_cols = []
     if "DL" in model_type:
-        # 루프에서 10초마다 세션에 저장해주는 따끈따끈한 데이터를 가져옴
         if 'dl_importance' in st.session_state:
-            viz_cols = st.session_state['dl_importance'].head(5)['Feature'].tolist()
-        
-    # 추출된 컬럼 시각화 (기존 px.line 로직 그대로 사용)
-    if viz_cols:
-        for idx, col in enumerate(viz_cols):
-            fig = px.line(df_input.tail(100), y=col, title=f"Top {idx+1} 원인 지표: {col}")
-            st.plotly_chart(fig, use_container_width=True)
+            # 루프에서 마지막으로 저장된 따끈따끈한 Top 5를 가져와서 출력
+            top_features = st.session_state['dl_importance'].head(5)['Feature'].tolist()
+            for idx, col in enumerate(top_features):
+                fig = px.line(df_input.tail(100), y=col, ...)
+                st.plotly_chart(fig, use_container_width=True)
