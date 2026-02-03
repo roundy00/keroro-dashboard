@@ -518,32 +518,89 @@ elif model_type == "DL (Anomaly Transformer)":
     # TAB 2: SHAP 분석 (100개 데이터 의존성 해결)
     # ---------------------------------------------------------
     with tab2:
-        st.subheader("2️⃣ SHAP 원인 분석")
+        st.subheader("🔍 인공지능 판단 근거 분석 (SHAP)")
         
-        # 현재 모인 데이터 확인
         current_data_count = len(df_test_display)
         WINDOW_SIZE = 100
 
         if current_data_count < WINDOW_SIZE:
-            st.warning(f"⚠️ 분석을 위해 {WINDOW_SIZE}개의 데이터가 필요합니다. (현재: {current_data_count}개)")
+            st.warning(f"⚠️ SHAP 분석을 위해 최소 {WINDOW_SIZE}개의 데이터가 필요합니다. (현재: {current_data_count}개)")
+            st.info("💡 실시간 모니터링을 실행하여 데이터를 축적하거나 사이드바에서 시작 인덱스를 조정하세요.")
             st.button("🚀 SHAP 분석 실행", disabled=True, use_container_width=True)
         else:
+            # 분석 결과가 아직 없을 때
             if not st.session_state.get('shap_completed', False):
+                st.info("📊 현재 시점으로부터 과거 100개 데이터를 분석하여 이상 징후에 기여하는 주요 지표를 도출합니다.")
                 if st.button("🚀 SHAP 분석 실행", use_container_width=True, type="primary"):
-                    with st.spinner("분석 중..."):
-                        # SHAP API 호출 로직
-                        raw_data = df_test_display[new_column_names].values
-                        window_data = raw_data[-WINDOW_SIZE:].tolist()
-                        # ... (API 호출 및 결과 저장 로직 동일) ...
-                        st.session_state.shap_completed = True
-                        st.rerun()
+                    with st.spinner("SHAP 서버에서 분석 중... (약 30~60초 소요)"):
+                        try:
+                            # 1. 윈도우 데이터 준비
+                            raw_data = df_test_display[new_column_names].values
+                            window_data = raw_data[-WINDOW_SIZE:].tolist()
+                            
+                            # 2. SHAP API 호출
+                            response = requests.post(
+                                SHAP_API_URL,
+                                json={"window": window_data},
+                                timeout=120
+                            )
+                            
+                            if response.status_code == 200:
+                                result = response.json()
+                                importance_data = result.get('importance', {})
+                                
+                                if importance_data:
+                                    # 3. 데이터프레임 변환 및 정렬
+                                    imp_df = pd.DataFrame([
+                                        {'Feature': k, 'Importance': v}
+                                        for k, v in importance_data.items()
+                                    ])
+                                    imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+                                    imp_df = imp_df.sort_values(by='Abs_Importance', ascending=False)
+                                    
+                                    # 4. 세션 상태 저장
+                                    st.session_state.shap_results = imp_df
+                                    st.session_state.shap_completed = True
+                                    st.success("✅ SHAP 분석 완료!")
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 분석 결과가 비어있습니다.")
+                            else:
+                                st.error(f"❌ 서버 오류: {response.status_code}")
+                        except Exception as e:
+                            st.error(f"❌ 분석 중 오류 발생: {str(e)}")
+
+            # 분석 결과가 있을 때 시각화 출력
             else:
-                # 결과값이 있을 때만 표시
-                if st.session_state.get('shap_results') is not None:
-                    st.success("✅ 최근 100개 지표 분석 결과")
-                    st.plotly_chart(px.bar(st.session_state.shap_results.head(10)[::-1], x='Importance', y='Feature', orientation='h'))
-                    if st.button("🔄 분석 초기화"):
+                if st.session_state.shap_results is not None:
+                    st.success("📊 SHAP 분석 결과: 주요 기여 지표 TOP 10")
+                    
+                    # 시각화 1: 막대 그래프 (Plotly)
+                    top_features = st.session_state.shap_results.head(10)
+                    fig = px.bar(
+                        top_features[::-1], # 상위 항목이 위로 오게 역순
+                        x='Importance',
+                        y='Feature',
+                        orientation='h',
+                        color='Importance',
+                        color_continuous_scale='RdYlGn_r',
+                        labels={'Importance': '영향력 (Shapley Value)'}
+                    )
+                    fig.update_layout(height=450, margin=dict(l=20, r=20, t=40, b=20))
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 시각화 2: 상세 데이터 테이블
+                    with st.expander("📋 전체 피처 영향력 데이터 보기"):
+                        st.dataframe(
+                            st.session_state.shap_results,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    
+                    # 다시 분석하기 버튼
+                    if st.button("🔄 새로운 데이터로 재분석", use_container_width=True):
                         st.session_state.shap_completed = False
+                        st.session_state.shap_results = None
                         st.rerun()
 
 # =====================================================================
