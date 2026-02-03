@@ -594,12 +594,21 @@ elif model_type == "DL (Anomaly Transformer)":
                             
                             # 2. SHAP API 호출
                             response = requests.post(
-                                SHAP_API_URL)
+                                SHAP_API_URL, timeout = 120)
+                            st.write("SHAP response status:", response.status_code)
+                            st.write("SHAP response text:", response.text)
                             
                             if response.status_code == 200:
                                 result = response.json()
                                 importance_data = result.get('importance', {})
+                                if result.get("status") != "success":
+                                    st.error(f"SHAP 서버 실패: {result}")
+                                    return
                                 
+                                importance_data = result.get("importance")
+                                if not importance_data:
+                                    st.error("SHAP 결과 importance가 비어 있습니다.")
+                                    return
                                 if importance_data:
                                     # 3. 데이터프레임 변환 및 정렬
                                     imp_df = pd.DataFrame([
