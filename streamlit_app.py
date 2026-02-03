@@ -28,6 +28,10 @@ if 'mute_alert' not in st.session_state:
 if 'current_idx' not in st.session_state:
   st.session_state.current_idx = 0
 
+# ✅ 이 줄을 반드시 추가하세요!
+if 'last_anomaly_time' not in st.session_state:
+    st.session_state.last_anomaly_time = 0
+
 # --- [추가] SHAP 분석 주기를 관리하기 위한 세션 변수 ---
 if 'last_shap_time' not in st.session_state:
   st.session_state.last_shap_time = 0
