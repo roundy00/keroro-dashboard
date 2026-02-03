@@ -294,8 +294,7 @@ elif "DL" in model_type:
           # 만약 서버가 [1, 100, 38] 형태를 원한다면 아래와 같이 슬라이싱합니다.
           if len(raw_data) >= WINDOW_SIZE:
             # 가장 최근의 100개 데이터를 3차원으로 변환
-            input_window = raw_data[-WINDOW_SIZE:].reshape(1, WINDOW_SIZE, -1)
-            input_data = input_window.tolist() # JSON 전송을 위해 리스트로 변환
+            input_data = raw_data[-WINDOW_SIZE:].tolist() # JSON 전송을 위해 리스트로 변환
           
             shap_res = requests.post(MY_SHAP_URL, json={"window": input_data}, timeout=60)
             
