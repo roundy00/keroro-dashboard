@@ -1,24 +1,71 @@
 import streamlit as st
 import pandas as pd
-from sklearn.ensemble import IsolationForest
-import plotly.express as px
-import plotly.graph_objects as go
+import numpy as np
 import requests
 import time
-import numpy as np
-import shap
+import os
+import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.ensemble import IsolationForest
 
 # =====================================================================
 # 페이지 설정
 # =====================================================================
 st.set_page_config(
-    page_title="실시간 서버 모니터링",
+    page_title="🚀 Keroro 서버 모니터링 시스템",
     page_icon="🚀",
     layout="wide"
 )
 
-st.title('🤖 서버 실시간 이상 탐지 대시보드 🤖')
-st.info('이 앱은 머신러닝과 딥러닝 모델을 활용하여 실시간으로 서버 상태를 모니터링합니다')
+# 커스텀 CSS로 UI 개선
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 3rem;
+        font-weight: bold;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        padding: 1rem 0;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .status-normal {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        text-align: center;
+        font-weight: bold;
+    }
+    .status-warning {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        text-align: center;
+        font-weight: bold;
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    .stTab {
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<h1 class="main-header">🚀 Keroro 서버 실시간 이상 탐지 시스템</h1>', unsafe_allow_html=True)
+st.markdown("---")
 
 # =====================================================================
 # 전역 설정
@@ -27,12 +74,7 @@ machine_num = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
                '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8', '2-9',
                '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8', '3-9', '3-10', '3-11']
 
-# API 서버 주소
-SHAP_API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/analyze"
-ANOMALY_API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict"
-
-# 피처 이름
-new_column_names = [
+FEATURE_NAMES = [
     'cpu_r', 'load_1', 'load_5', 'load_15', 'mem_shmem', 'mem_u', 'mem_u_e', 'total_mem',
     'disk_q', 'disk_r', 'disk_rb', 'disk_svc', 'disk_u', 'disk_w', 'disk_wa', 'disk_wb',
     'si', 'so', 'eth1_fi', 'eth1_fo', 'eth1_pi', 'eth1_po', 'tcp_tw', 'tcp_use',
@@ -46,29 +88,32 @@ new_column_names = [
 # =====================================================================
 def init_session_state():
     """세션 상태 변수들을 초기화"""
-    if 'workflow_stage' not in st.session_state:
-        st.session_state.workflow_stage = 'SELECT_MODEL'  # SELECT_MODEL, SHAP_ANALYSIS, REALTIME_MONITORING
+    defaults = {
+        'base_url': 'https://unbarreled-uncrusted-juliana.ngrok-free.dev',
+        'model_type': 'DL',
+        'workflow_stage': 'SELECT_MODEL',
+        'shap_completed': False,
+        'shap_results': None,
+        'monitoring_active': False,
+        'stream_running': False,
+        'stream_i': 0,
+        'stream_target': None,
+        'history': [],
+        'last_result': None,
+        'alert_until': 0.0,
+        'alert_msg': '',
+        'anomaly_scores': [],
+        'last_anomaly_time': 0,
+        'mute_alert': False,
+        'FILE_PATH': '/Users/hri/east/backend/data/machine-1-1.npy',
+        'START_INDEX': 15800,
+        'SLEEP_SEC': 0.2,
+        'N_PER_RERUN': 5,
+    }
     
-    if 'shap_completed' not in st.session_state:
-        st.session_state.shap_completed = False
-    
-    if 'shap_results' not in st.session_state:
-        st.session_state.shap_results = None
-    
-    if 'monitoring_active' not in st.session_state:
-        st.session_state.monitoring_active = False
-    
-    if 'current_idx' not in st.session_state:
-        st.session_state.current_idx = 0
-    
-    if 'anomaly_scores' not in st.session_state:
-        st.session_state.anomaly_scores = []
-    
-    if 'last_anomaly_time' not in st.session_state:
-        st.session_state.last_anomaly_time = 0
-    
-    if 'mute_alert' not in st.session_state:
-        st.session_state.mute_alert = False
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 init_session_state()
 
@@ -76,53 +121,105 @@ init_session_state()
 # 사이드바 설정
 # =====================================================================
 with st.sidebar:
-    st.header("⚙️ 시스템 설정")
+    st.markdown("### ⚙️ 시스템 설정")
     
-    # 머신 선택
-    selected_machine = st.selectbox('대상 머신 선택', [f'machine-{i}' for i in machine_num])
+    # 서버 URL 설정
+    base_url = st.text_input(
+        "🔗 FastAPI 서버 URL",
+        value=st.session_state.base_url,
+        help="예: https://xxxx.ngrok-free.dev"
+    ).strip().rstrip("/")
+    st.session_state.base_url = base_url
+    
+    # Health Check
+    if st.button("💓 서버 상태 확인", use_container_width=True):
+        try:
+            r = requests.get(f"{base_url}/health", timeout=5)
+            if r.status_code == 200:
+                st.success(f"✅ 서버 정상: {r.json()}")
+            else:
+                st.error(f"❌ HTTP {r.status_code}")
+        except Exception as e:
+            st.error(f"❌ 연결 실패: {e}")
+    
+    st.divider()
     
     # 모델 선택
     model_type = st.radio(
-        '분석 모델 종류',
+        '🤖 분석 모델 선택',
         ["ML (IsolationForest)", "DL (Anomaly Transformer)"],
-        key='model_type_radio'
+        index=1 if st.session_state.model_type == 'DL' else 0
+    )
+    st.session_state.model_type = 'DL' if 'DL' in model_type else 'ML'
+    
+    st.divider()
+    
+    # 머신 선택
+    selected_machine = st.selectbox(
+        '🖥️ 대상 머신 선택',
+        [f'machine-{i}' for i in machine_num],
+        index=0
     )
     
     st.divider()
     
-    # 긴급 제어
-    st.header("🚨 긴급 제어")
-    
-    if st.button("🔄 전체 초기화", use_container_width=True):
-        # 모든 세션 상태 초기화
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
-    
-    if st.button("🔇 경보 음소거", use_container_width=True):
-        st.session_state.mute_alert = True
-        st.success("경보가 음소거되었습니다")
+    # DL 모델용 추가 설정
+    if st.session_state.model_type == 'DL':
+        st.markdown("#### 📊 DL 모델 설정")
+        
+        file_path = st.text_input(
+            "NPY 파일 경로",
+            value=st.session_state.FILE_PATH
+        )
+        st.session_state.FILE_PATH = file_path
+        
+        start_index = st.number_input(
+            "시작 인덱스",
+            min_value=0,
+            value=st.session_state.START_INDEX,
+            step=100
+        )
+        st.session_state.START_INDEX = int(start_index)
+        
+        sleep_sec = st.number_input(
+            "갱신 주기 (초)",
+            min_value=0.01,
+            value=st.session_state.SLEEP_SEC,
+            step=0.01
+        )
+        st.session_state.SLEEP_SEC = float(sleep_sec)
+        
+        n_per_rerun = st.number_input(
+            "배치 크기",
+            min_value=1,
+            value=st.session_state.N_PER_RERUN,
+            step=1
+        )
+        st.session_state.N_PER_RERUN = int(n_per_rerun)
     
     st.divider()
     
-    # 시작 인덱스 설정 (딥러닝 모델에서만 사용)
-    if 'DL' in model_type:
-        start_point = st.number_input(
-            '시작 인덱스 설정',
-            min_value=0,
-            max_value=10000,
-            value=0,
-            step=100
-        )
-    else:
-        start_point = 0
+    # 긴급 제어
+    st.markdown("### 🚨 긴급 제어")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 초기화", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+    
+    with col2:
+        if st.button("🔇 음소거", use_container_width=True):
+            st.session_state.mute_alert = True
+            st.success("음소거됨")
 
 # =====================================================================
-# 데이터 로드
+# 데이터 로드 함수 (ML 모드용)
 # =====================================================================
 @st.cache_data
 def load_data(machine_name):
-    """데이터 로드 및 전처리"""
+    """ML 모드용 데이터 로드"""
     df_train = pd.read_csv(
         f'https://raw.githubusercontent.com/roundy00/keroro-machinelearning/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{machine_name}/{machine_name}_train.csv'
     )
@@ -130,543 +227,415 @@ def load_data(machine_name):
         f'https://raw.githubusercontent.com/roundy00/keroro-dashboard/refs/heads/master/Server-Machine-Dataset-main/processed_csv/{machine_name}/{machine_name}_test.csv'
     )
     
-    # 컬럼 이름 변경
-    rename_dict = {f'col_{i}': new_column_names[i] for i in range(len(new_column_names))}
+    rename_dict = {f'col_{i}': FEATURE_NAMES[i] for i in range(len(FEATURE_NAMES))}
     df_train.rename(columns=rename_dict, inplace=True)
     df_test.rename(columns=rename_dict, inplace=True)
     
     return df_train, df_test
-
-# 데이터 로드
-with st.spinner('데이터 로딩 중...'):
-    df_train, df_test = load_data(selected_machine)
-
-# 시작 인덱스 적용
-df_test_display = df_test.iloc[start_point:].reset_index(drop=True)
-
-# =====================================================================
-# 현재 상태 표시
-# =====================================================================
-status_cols = st.columns([2, 2, 1])
-with status_cols[0]:
-    st.metric("머신", selected_machine)
-with status_cols[1]:
-    st.metric("모델", model_type)
-with status_cols[2]:
-    stage_emoji = {
-        'SELECT_MODEL': '1️⃣',
-        'SHAP_ANALYSIS': '2️⃣',
-        'REALTIME_MONITORING': '3️⃣'
-    }
-    st.metric("단계", stage_emoji.get(st.session_state.workflow_stage, '❓'))
-
-st.divider()
 
 # =====================================================================
 # 유틸리티 함수
 # =====================================================================
 def trigger_emergency_alert():
     """긴급 경보 UI"""
-    st.markdown(
-        """
-        <style>
-        @keyframes shake {
-            0% { transform: translate(1px, 1px) rotate(0deg); }
-            10% { transform: translate(-1px, -2px) rotate(-1deg); }
-            30% { transform: translate(3px, 2px) rotate(0deg); }
-            50% { transform: translate(-1px, 2px) rotate(1deg); }
-            100% { transform: translate(1px, -2px) rotate(-1deg); }
-        }
-        .stApp {
-            animation: shake 0.5s infinite;
-            background-color: #440000 !important;
-        }
-        .extreme-alert {
-            background-color: #FF0000;
-            color: yellow;
-            padding: 30px;
+    st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #ff0000 0%, #ff6b6b 100%);
+            color: white;
+            padding: 2rem;
             text-align: center;
-            font-size: 50px;
+            font-size: 2.5rem;
             font-weight: bold;
-            border: 10px solid yellow;
-            border-radius: 20px;
-        }
-        </style>
-        <div class="extreme-alert">
-            🚨🚨 SYSTEM CRITICAL: EMERGENCY 🚨🚨
+            border-radius: 15px;
+            border: 5px solid #ffeb3b;
+            box-shadow: 0 0 30px rgba(255,0,0,0.5);
+            animation: pulse 0.5s infinite;
+        ">
+            🚨 시스템 경고: 이상 감지됨! 🚨
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
 
 # =====================================================================
-# 머신러닝 모델 (Isolation Forest) - 2단계 워크플로우
+# 메인 탭 구성
 # =====================================================================
-if model_type == "ML (IsolationForest)":
+tab1, tab2, tab3 = st.tabs([
+    "📈 실시간 모니터링",
+    "🔍 SHAP 분석",
+    "📊 시스템 정보"
+])
+
+# =====================================================================
+# TAB 1: 실시간 모니터링
+# =====================================================================
+with tab1:
+    st.markdown("## 📈 실시간 이상 탐지 모니터링")
     
-    # 모델 학습 (최초 1회)
-    if 'ml_model_trained' not in st.session_state:
-        X_train = df_train.drop(columns=['timestamp'], axis=1)
-        model = IsolationForest(contamination=0.01, random_state=42)
-        
-        with st.spinner('모델 학습 중...'):
-            model.fit(X_train)
-        
-        st.session_state.ml_model = model
-        st.session_state.ml_model_trained = True
-    else:
-        model = st.session_state.ml_model
+    # 현재 상태 표시
+    cols = st.columns(4)
+    with cols[0]:
+        st.markdown('<div class="metric-card">🖥️<br>머신<br><h3>{}</h3></div>'.format(selected_machine), unsafe_allow_html=True)
+    with cols[1]:
+        st.markdown('<div class="metric-card">🤖<br>모델<br><h3>{}</h3></div>'.format(st.session_state.model_type), unsafe_allow_html=True)
+    with cols[2]:
+        stage_name = {
+            'SELECT_MODEL': '모델 선택',
+            'SHAP_ANALYSIS': 'SHAP 분석',
+            'REALTIME_MONITORING': '실시간 모니터링'
+        }.get(st.session_state.workflow_stage, '알 수 없음')
+        st.markdown('<div class="metric-card">📍<br>단계<br><h3>{}</h3></div>'.format(stage_name), unsafe_allow_html=True)
+    with cols[3]:
+        alert_count = len([x for x in st.session_state.history if x.get('is_anomaly', False)])
+        st.markdown('<div class="metric-card">⚠️<br>이상 횟수<br><h3>{}</h3></div>'.format(alert_count), unsafe_allow_html=True)
     
-    # 파라미터 설정
-    DANGER_LINE = 0.0
-    WARNING_THRESHOLD = 0.05
+    st.markdown("---")
     
-    # 세션 변수 초기화
-    if 'ml_workflow_stage' not in st.session_state:
-        st.session_state.ml_workflow_stage = 'SHAP_FIRST'  # SHAP_FIRST, MONITORING
-    
-    if 'ml_scores_history' not in st.session_state:
-        st.session_state.ml_scores_history = []
-    
-    if 'last_anomaly_time_ml' not in st.session_state:
-        st.session_state.last_anomaly_time_ml = 0
-    
-    if 'ml_shap_completed' not in st.session_state:
-        st.session_state.ml_shap_completed = False
-    
-    # ========== 단계 1: SHAP 분석 먼저 ==========
-    if st.session_state.ml_workflow_stage == 'SHAP_FIRST':
-        st.header("🤖 머신러닝 기반 이상 탐지 (Isolation Forest)")
-        st.success("✅ 모델 학습 완료!")
+    # DL 모드
+    if st.session_state.model_type == 'DL':
+        st.markdown("### 🎯 딥러닝 기반 실시간 예측")
         
-        st.divider()
-        st.subheader("1️⃣ 단계 1: SHAP 원인 분석")
+        # 컨트롤 버튼
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            start_btn = st.button("▶️ 모니터링 시작", use_container_width=True, type="primary")
+        with col2:
+            stop_btn = st.button("⏹ 중지", use_container_width=True)
+        with col3:
+            reset_btn = st.button("🧹 데이터 초기화", use_container_width=True)
         
-        if not st.session_state.ml_shap_completed:
-            st.info("📊 먼저 SHAP 분석을 통해 주요 이상 원인 지표를 파악합니다")
-            
-            if st.button("🚀 SHAP 분석 실행", use_container_width=True, type="primary"):
-                with st.spinner("SHAP 분석 중..."):
-                    explainer = shap.TreeExplainer(model)
-                    X_sample = df_test_display[new_column_names].sample(min(100, len(df_test_display)))
-                    shap_values = explainer.shap_values(X_sample)
-                    
-                    importance = np.abs(shap_values).mean(axis=0)
-                    analysis_df = pd.DataFrame({
-                        'Feature': new_column_names,
-                        'Importance': importance
-                    }).sort_values(by='Importance', ascending=False)
-                    
-                    st.session_state.ml_shap_results = analysis_df
-                    st.session_state.ml_shap_completed = True
-                    st.success("✅ SHAP 분석 완료!")
-                    time.sleep(1)
-                    st.rerun()
+        if reset_btn:
+            st.session_state.stream_running = False
+            st.session_state.stream_i = 0
+            st.session_state.stream_target = None
+            st.session_state.history = []
+            st.session_state.last_result = None
+            st.session_state.alert_until = 0.0
+            st.session_state.alert_msg = ""
+            st.success("✅ 초기화 완료")
         
-        else:
-            # SHAP 결과 표시
-            st.success("✅ SHAP 분석이 완료되었습니다!")
-            
-            if st.session_state.ml_shap_results is not None:
-                top_features = st.session_state.ml_shap_results.head(10)
-                
-                fig = px.bar(
-                    top_features[::-1],
-                    x='Importance',
-                    y='Feature',
-                    orientation='h',
-                    title="주요 이상 원인 지표 TOP 10",
-                    color='Importance',
-                    color_continuous_scale='Reds'
-                )
-                fig.update_layout(height=500)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # 상세 데이터 표시
-                with st.expander("📋 전체 분석 결과 보기"):
-                    st.dataframe(
-                        st.session_state.ml_shap_results,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-            
-            st.divider()
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 SHAP 재분석", use_container_width=True):
-                    st.session_state.ml_shap_completed = False
-                    st.rerun()
-            
-            with col2:
-                if st.button("▶️ 실시간 모니터링 시작", use_container_width=True, type="primary"):
-                    st.session_state.ml_workflow_stage = 'MONITORING'
-                    st.session_state.current_idx = 0
-                    st.session_state.ml_scores_history = []
-                    st.rerun()
-    
-    # ========== 단계 2: 실시간 모니터링 ==========
-    elif st.session_state.ml_workflow_stage == 'MONITORING':
-        st.header("🤖 머신러닝 기반 이상 탐지 (Isolation Forest)")
-        
-        # SHAP 결과 요약 표시
-        with st.expander("📊 SHAP 분석 결과 요약"):
-            if st.session_state.ml_shap_results is not None:
-                top_3 = st.session_state.ml_shap_results.head(3)
-                cols = st.columns(3)
-                for idx, row in enumerate(top_3.itertuples()):
-                    with cols[idx]:
-                        st.metric(
-                            f"#{idx+1} {row.Feature}",
-                            f"{row.Importance:.4f}"
-                        )
-        
-        st.divider()
-        st.subheader("2️⃣ 단계 2: 실시간 이상 탐지 모니터링")
-        
-        # 실시간 분석 UI
-        status_box = st.empty()
-        alert_box = st.empty()
-        chart_box = st.empty()
-        metrics_box = st.empty()
-        
-        # 실시간 분석 루프
-        for i in range(st.session_state.current_idx, len(df_test_display)):
-            st.session_state.current_idx = i
-            current_row = df_test_display.iloc[i:i+1][new_column_names]
-            
-            # 이상 점수 계산
-            score = model.decision_function(current_row)[0]
-            st.session_state.ml_scores_history.append({
-                'step': i,
-                'score': score,
-                'is_anomaly': score < DANGER_LINE
-            })
-            
-            # 이상 탐지
-            is_anomaly = score < DANGER_LINE
-            is_warning = (score < WARNING_THRESHOLD) and (not is_anomaly)
-            
-            if is_anomaly:
-                st.session_state.last_anomaly_time_ml = time.time()
-            
-            is_maintaining_alert = (time.time() - st.session_state.last_anomaly_time_ml) < 10
-            
-            # 경고 표시
-            now = time.time()
-            if now - st.session_state.last_anomaly_time_ml < 10:
-                with alert_box.container():
-                    if not st.session_state.mute_alert:
-                        trigger_emergency_alert()
-                    remaining = int(10 - (now - st.session_state.last_anomaly_time_ml))
-                    st.toast(f"🚨 이상 감지! ({remaining}초 유지)")
+        if start_btn:
+            if not os.path.exists(st.session_state.FILE_PATH):
+                st.error(f"❌ 파일을 찾을 수 없습니다: {st.session_state.FILE_PATH}")
             else:
-                alert_box.empty()
+                all_data = np.load(st.session_state.FILE_PATH)
+                target_data = all_data[st.session_state.START_INDEX:]
+                st.session_state.stream_target = target_data
+                st.session_state.stream_i = 0
+                st.session_state.stream_running = True
+                st.success(f"📂 데이터 로드 완료: {all_data.shape} | 시작: {st.session_state.START_INDEX}")
+        
+        if stop_btn:
+            st.session_state.stream_running = False
+            st.info("⏸ 모니터링 중지")
+        
+        # Placeholders
+        alert_placeholder = st.empty()
+        status_placeholder = st.empty()
+        chart_placeholder = st.empty()
+        
+        # 차트 그리기
+        df_h = pd.DataFrame(st.session_state.history) if st.session_state.history else pd.DataFrame(
+            columns=["index", "score", "threshold", "is_anomaly", "over_threshold"]
+        )
+        
+        fig = go.Figure()
+        
+        if len(df_h) > 0:
+            # Score line
+            fig.add_trace(go.Scatter(
+                x=df_h["index"],
+                y=df_h["score"],
+                mode="lines+markers",
+                name="점수",
+                line=dict(color='#667eea', width=2),
+                marker=dict(size=6)
+            ))
             
-            # 상태 표시
-            with status_box.container():
-                if is_anomaly:
-                    st.error(f"🚨 **이상 발생!** 점수: {score:.4f} | 임계치: {DANGER_LINE:.4f}")
-                elif is_warning:
-                    st.warning(f"⚠️ **주의** 이상 전조 증상 포착! (점수: {score:.4f})")
-                else:
-                    st.success(f"✅ **정상 상태** 점수: {score:.4f}")
-            
-            # 차트 업데이트
-            with chart_box.container():
-                if len(st.session_state.ml_scores_history) > 0:
-                    # 최근 100개 데이터
-                    recent_data = st.session_state.ml_scores_history[-100:]
-                    df_chart = pd.DataFrame(recent_data)
-                    
-                    # 메인 차트
-                    import plotly.graph_objects as go
-                    fig = go.Figure()
-                    
-                    # 정상 구간
-                    normal_data = df_chart[~df_chart['is_anomaly']]
+            # Anomaly markers
+            if "is_anomaly" in df_h.columns:
+                an = df_h[df_h["is_anomaly"] == True]
+                if len(an) > 0:
                     fig.add_trace(go.Scatter(
-                        x=normal_data['step'],
-                        y=normal_data['score'],
-                        mode='lines+markers',
-                        name='정상',
-                        line=dict(color='green', width=2),
-                        marker=dict(size=4)
+                        x=an["index"],
+                        y=an["score"],
+                        mode="markers",
+                        name="이상",
+                        marker=dict(symbol="x", size=12, color='red')
                     ))
-                    
-                    # 이상 구간
-                    anomaly_data = df_chart[df_chart['is_anomaly']]
-                    if len(anomaly_data) > 0:
-                        fig.add_trace(go.Scatter(
-                            x=anomaly_data['step'],
-                            y=anomaly_data['score'],
-                            mode='markers',
-                            name='이상',
-                            marker=dict(color='red', size=10, symbol='x')
-                        ))
-                    
-                    # 임계치 영역
-                    fig.add_hrect(
-                        y0=DANGER_LINE, y1=WARNING_THRESHOLD,
-                        fillcolor="yellow", opacity=0.3, line_width=0,
-                        annotation_text="주의 구간",
-                        annotation_position="top left"
-                    )
-                    fig.add_hrect(
-                        y0=-0.5, y1=DANGER_LINE,
-                        fillcolor="red", opacity=0.2, line_width=0,
-                        annotation_text="위험 구간",
-                        annotation_position="bottom left"
-                    )
-                    
-                    fig.add_hline(
-                        y=DANGER_LINE,
-                        line_dash="dash",
-                        line_color="red",
-                        annotation_text=f"위험 임계치: {DANGER_LINE}",
-                        annotation_position="right"
-                    )
-                    
-                    fig.update_layout(
-                        title=f"{selected_machine} 실시간 이상 탐지 점수 (최근 100개)",
-                        xaxis_title="Time Step",
-                        yaxis_title="Anomaly Score",
-                        yaxis=dict(range=[-0.5, 0.5], fixedrange=True),
-                        height=450,
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True, key=f"ml_chart_{i}")
             
-            # 메트릭 표시
-            with metrics_box.container():
-                cols = st.columns(4)
-                with cols[0]:
-                    st.metric("현재 Step", i)
-                with cols[1]:
-                    st.metric("총 데이터 수", len(st.session_state.ml_scores_history))
-                with cols[2]:
-                    anomaly_count = sum(1 for d in st.session_state.ml_scores_history if d['is_anomaly'])
-                    st.metric("이상 감지 횟수", anomaly_count)
-                with cols[3]:
-                    if len(st.session_state.ml_scores_history) > 0:
-                        anomaly_rate = anomaly_count / len(st.session_state.ml_scores_history) * 100
-                        st.metric("이상 발생률", f"{anomaly_rate:.2f}%")
-            
-            time.sleep(0.1)
-
-# =====================================================================
-# 딥러닝 모델 (Anomaly Transformer) - 3단계 워크플로우
-# =====================================================================
-elif model_type == "DL (Anomaly Transformer)":
-    # 1. 독립적인 레이아웃 구성을 위한 탭 생성
-    tab1, tab2 = st.tabs(["📊 실시간 모니터링", "🔍 SHAP 원인 분석"])
-
-    # ---------------------------------------------------------
-    # TAB 1: 실시간 모니터링 (데이터 1개부터 즉시 가능)
-    # ---------------------------------------------------------
-    with tab1:
-        st.subheader("3️⃣ 실시간 이상 탐지 모니터링")
+            # Threshold line
+            if "threshold" in df_h.columns and df_h["threshold"].notna().any():
+                thr_last = float(df_h["threshold"].iloc[-1])
+                fig.add_hline(
+                    y=thr_last,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"임계치: {thr_last:.4f}"
+                )
         
-        # 시작/중지 버튼 제어
-        if not st.session_state.monitoring_active:
-            if st.button("▶️ 모니터링 시작", use_container_width=True, type="primary"):
-                st.session_state.monitoring_active = True
-                st.rerun()
-        else:
-            if st.button("🛑 모니터링 중지", use_container_width=True):
-                st.session_state.monitoring_active = False
-                st.rerun()
-
-        if st.session_state.monitoring_active:
-            status_box = st.empty()
-            alert_box = st.empty()
-            chart_box = st.empty()
-            metrics_box = st.empty()
-
-            # 모니터링 루프 (기존 로직 유지하되 세션 상태 업데이트 방식 최적화)
-            for i in range(st.session_state.current_idx, len(df_test_display)):
-                if not st.session_state.monitoring_active: break # 중지 버튼 대응
-                
-                st.session_state.current_idx = i
-                current_row = df_test_display.iloc[i][new_column_names].values.tolist()
-
-                try:
-                    response = requests.post(ANOMALY_API_URL, json={"values": current_row}, timeout=5)
-                    if response.status_code == 200:
-                        result = response.json()
-                        if result.get('status') == "ready":
-                            # 결과 파싱 및 점수 저장
-                            score = result.get('score', 0.0)
-                            threshold = result.get('threshold', 0.5)
-                            is_anomaly = result.get('is_anomaly', False)
-                            st.session_state.anomaly_scores.append({'step': i, 'score': score, 'is_anomaly': is_anomaly})
-
-                            # [UI 업데이트] 상태 메시지 및 차트 출력
-                            with status_box:
-                                if is_anomaly: st.error(f"🚨 이상 발생! 점수: {score:.6f}")
-                                else: st.success(f"✅ 정상 상태 점수: {score:.6f}")
-                            
-                            # 1. 경고 및 알림 로직 (최근 30초 내 이상 발생 시)
-                            now = time.time()
-                            if is_anomaly:
-                                st.session_state.last_anomaly_time = now
-                                st.toast(f"🚨 이상 감지! (Step: {i})")
-                            
-                            # 2. 실시간 차트 업데이트 (최근 100개 데이터)
-                            with chart_box:
-                                if len(st.session_state.anomaly_scores) > 0:
-                                    recent_data = st.session_state.anomaly_scores[-100:]
-                                    df_chart = pd.DataFrame(recent_data)
-                                    
-                                    fig = go.Figure()
-                                    
-                                    # 정상 데이터 (초록색 선)
-                                    normal_data = df_chart[~df_chart['is_anomaly']]
-                                    fig.add_trace(go.Scatter(
-                                        x=df_chart['step'], y=df_chart['score'],
-                                        mode='lines', name='Score',
-                                        line=dict(color='#2ecc71', width=2)
-                                    ))
-                                    
-                                    # 이상 지점 (빨간색 X 표시)
-                                    anomaly_pts = df_chart[df_chart['is_anomaly']]
-                                    if not anomaly_pts.empty:
-                                        fig.add_trace(go.Scatter(
-                                            x=anomaly_pts['step'], y=anomaly_pts['score'],
-                                            mode='markers', name='Anomaly',
-                                            marker=dict(color='#e74c3c', size=10, symbol='x')
-                                        ))
-                                    
-                                    # 임계치 점선
-                                    fig.add_hline(y=threshold, line_dash="dash", line_color="#c0392b", 
-                                                  annotation_text=f"Threshold: {threshold:.4f}")
-                                    
-                                    fig.update_layout(
-                                        title=f"실시간 이상 탐지 스코어 (최근 100 step)",
-                                        xaxis_title="Time Step", yaxis_title="Score",
-                                        height=400, margin=dict(l=10, r=10, t=40, b=10),
-                                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
-
-                            # 3. 실시간 메트릭 카드 업데이트
-                            with metrics_box:
-                                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                                anomaly_count = sum(1 for d in st.session_state.anomaly_scores if d['is_anomaly'])
-                                total_count = len(st.session_state.anomaly_scores)
-                                anomaly_rate = (anomaly_count / total_count * 100) if total_count > 0 else 0
-                                
-                                m_col1.metric("현재 Step", i)
-                                m_col2.metric("현재 스코어", f"{score:.4f}", delta=f"{score-threshold:.4f}" if is_anomaly else None, delta_color="inverse")
-                                m_col3.metric("이상 감지 횟수", f"{anomaly_count}회")
-                                m_col4.metric("이상 발생률", f"{anomaly_rate:.2f}%")
-                                
-                        else:
-                            status_box.info(f"⏳ 서버 데이터 축적 중... ({result.get('progress')})")
-                except Exception as e:
-                    st.error(f"⚠️ 통신 오류: {e}")
-                time.sleep(0.1)
-
-    # ---------------------------------------------------------
-    # TAB 2: SHAP 분석 (100개 데이터 의존성 해결)
-    # ---------------------------------------------------------
-    with tab2:
-        st.subheader("🔍 인공지능 판단 근거 분석 (SHAP)")
+        fig.update_layout(
+            title="실시간 이상 탐지 점수",
+            height=400,
+            xaxis_title="인덱스",
+            yaxis_title="이상 점수",
+            hovermode="x unified",
+            template="plotly_white"
+        )
         
-        current_data_count = len(df_test_display)
-        WINDOW_SIZE = 100
-
-        if current_data_count < WINDOW_SIZE:
-            st.warning(f"⚠️ SHAP 분석을 위해 최소 {WINDOW_SIZE}개의 데이터가 필요합니다. (현재: {current_data_count}개)")
-            st.info("💡 실시간 모니터링을 실행하여 데이터를 축적하거나 사이드바에서 시작 인덱스를 조정하세요.")
-            st.button("🚀 SHAP 분석 실행", disabled=True, use_container_width=True)
+        chart_placeholder.plotly_chart(fig, use_container_width=True)
+        
+        # 5초 경고 표시
+        if time.time() < st.session_state.alert_until:
+            alert_placeholder.warning(st.session_state.alert_msg)
         else:
-            # 분석 결과가 아직 없을 때
-            if not st.session_state.get('shap_completed', False):
-                st.info("📊 현재 시점으로부터 과거 100개 데이터를 분석하여 이상 징후에 기여하는 주요 지표를 도출합니다.")
-                if st.button("🚀 SHAP 분석 실행", use_container_width=True, type="primary"):
-                    with st.spinner("SHAP 서버에서 분석 중... (약 30~60초 소요)"):
-                        try:
-                            # 1. 윈도우 데이터 준비
-                            raw_data = df_test_display[new_column_names].values
-                            window_data = raw_data[-WINDOW_SIZE:].tolist()
-                            
-                            # 2. SHAP API 호출
-                            response = requests.post(
-                                SHAP_API_URL, timeout = 120)
-                            st.write("SHAP response status:", response.status_code)
-                            st.write("SHAP response text:", response.text)
-                            
-                            if response.status_code == 200:
-                                result = response.json()
-                                importance_data = result.get('importance', {})
-                                if result.get("status") != "success":
-                                    st.error(f"SHAP 서버 실패: {result}")
-                                    st.stop()
-                                
-                                importance_data = result.get("importance")
-                                if not importance_data:
-                                    st.error("SHAP 결과 importance가 비어 있습니다.")
-                                    st.stop()
-                                    
-                                if importance_data:
-                                    # 3. 데이터프레임 변환 및 정렬
-                                    imp_df = pd.DataFrame([
-                                        {'Feature': k, 'Importance': v}
-                                        for k, v in importance_data.items()
-                                    ])
-                                    imp_df['Abs_Importance'] = imp_df['Importance'].abs()
-                                    imp_df = imp_df.sort_values(by='Abs_Importance', ascending=False)
-                                    
-                                    # 4. 세션 상태 저장
-                                    st.session_state.shap_results = imp_df
-                                    st.session_state.shap_completed = True
-                                    st.success("✅ SHAP 분석 완료!")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ 분석 결과가 비어있습니다.")
-                            else:
-                                st.error(f"❌ 서버 오류: {response.status_code}")
-                        except Exception as e:
-                            st.error(f"❌ 분석 중 오류 발생: {str(e)}")
-
-            # 분석 결과가 있을 때 시각화 출력
+            alert_placeholder.empty()
+        
+        # 스트리밍 루프
+        if st.session_state.stream_running:
+            if st.session_state.stream_target is None:
+                status_placeholder.warning("⚠️ 먼저 '모니터링 시작' 버튼을 눌러주세요.")
             else:
-                if st.session_state.shap_results is not None:
-                    st.success("📊 SHAP 분석 결과: 주요 기여 지표 TOP 10")
+                target = st.session_state.stream_target
+                
+                for _ in range(st.session_state.N_PER_RERUN):
+                    i = st.session_state.stream_i
+                    if i >= len(target):
+                        st.session_state.stream_running = False
+                        status_placeholder.success("✅ 모니터링 완료 (데이터 끝)")
+                        break
                     
-                    # 시각화 1: 막대 그래프 (Plotly)
-                    top_features = st.session_state.shap_results.head(10)
-                    fig = px.bar(
-                        top_features[::-1], # 상위 항목이 위로 오게 역순
-                        x='Importance',
-                        y='Feature',
-                        orientation='h',
-                        color='Importance',
-                        color_continuous_scale='RdYlGn_r',
-                        labels={'Importance': '영향력 (Shapley Value)'}
-                    )
-                    fig.update_layout(height=450, margin=dict(l=20, r=20, t=40, b=20))
-                    st.plotly_chart(fig, use_container_width=True)
+                    row = target[i]
+                    current_index = st.session_state.START_INDEX + i
                     
-                    # 시각화 2: 상세 데이터 테이블
-                    with st.expander("📋 전체 피처 영향력 데이터 보기"):
-                        st.dataframe(
-                            st.session_state.shap_results,
-                            use_container_width=True,
-                            hide_index=True
+                    try:
+                        start_time = time.time()
+                        response = requests.post(
+                            f"{st.session_state.base_url}/predict",
+                            json={"values": row.tolist()},
+                            timeout=10
                         )
+                        end_time = time.time()
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.session_state.last_result = result
+                            
+                            if result.get("status") == "ready":
+                                score = float(result.get("score", 0.0))
+                                thr = float(result.get("threshold", 0.0))
+                                is_anom = bool(result.get("is_anomaly", False))
+                                over_thr = (thr != 0.0 and score > thr)
+                                
+                                # 상태 표시
+                                if is_anom or over_thr:
+                                    status_placeholder.markdown(
+                                        f'<div class="status-warning">⚠️ 이상 감지! Index: {current_index} | 점수: {score:.4f} > 임계치: {thr:.4f}</div>',
+                                        unsafe_allow_html=True
+                                    )
+                                    # 5초 경고
+                                    st.session_state.alert_until = time.time() + 5.0
+                                    st.session_state.alert_msg = f"🚨 이상 감지 @ Index={current_index} | 점수={score:.4f}"
+                                    st.toast(st.session_state.alert_msg, icon="🚨")
+                                else:
+                                    status_placeholder.markdown(
+                                        f'<div class="status-normal">✅ 정상 | Index: {current_index} | 점수: {score:.4f} (지연: {end_time-start_time:.2f}초)</div>',
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                st.session_state.history.append({
+                                    "index": current_index,
+                                    "score": score,
+                                    "threshold": thr,
+                                    "is_anomaly": is_anom,
+                                    "over_threshold": bool(over_thr),
+                                })
+                            else:
+                                status_placeholder.info(f"⏳ 모델 준비 중... ({result.get('progress', '?')})")
+                        else:
+                            st.error(f"❌ 서버 오류: {response.status_code}")
+                            st.session_state.stream_running = False
+                            break
                     
-                    # 다시 분석하기 버튼
-                    if st.button("🔄 새로운 데이터로 재분석", use_container_width=True):
-                        st.session_state.shap_completed = False
-                        st.session_state.shap_results = None
-                        st.rerun()
+                    except Exception as e:
+                        st.session_state.stream_running = False
+                        status_placeholder.error(f"❌ 오류 발생: {e}")
+                        break
+                    
+                    st.session_state.stream_i = i + 1
+                    time.sleep(st.session_state.SLEEP_SEC)
+                
+                st.rerun()
+        
+        # 최근 결과 표시
+        st.markdown("---")
+        st.markdown("### 📋 최근 예측 결과")
+        if st.session_state.last_result:
+            result_cols = st.columns(4)
+            with result_cols[0]:
+                st.metric("상태", st.session_state.last_result.get("status", "N/A"))
+            with result_cols[1]:
+                st.metric("점수", f"{st.session_state.last_result.get('score', 0):.6f}")
+            with result_cols[2]:
+                st.metric("임계치", f"{st.session_state.last_result.get('threshold', 0):.6f}")
+            with result_cols[3]:
+                is_anom = st.session_state.last_result.get('is_anomaly', False)
+                st.metric("이상 여부", "⚠️ 이상" if is_anom else "✅ 정상")
+            
+            with st.expander("상세 JSON 보기"):
+                st.json(st.session_state.last_result)
+        else:
+            st.info("아직 예측 결과가 없습니다.")
+    
+    # ML 모드
+    else:
+        st.markdown("### 🎯 머신러닝 기반 실시간 예측")
+        st.info("ML 모드는 곧 업데이트됩니다. 현재는 DL 모드를 사용해주세요.")
 
 # =====================================================================
-# 하단 데이터 표시
+# TAB 2: SHAP 분석
 # =====================================================================
-st.divider()
-with st.expander("📋 원본 데이터 보기"):
-    st.dataframe(df_test_display, use_container_width=True)
+with tab2:
+    st.markdown("## 🔍 SHAP 중요도 분석")
+    st.info("📌 SHAP 분석은 모델의 예측에 각 피처가 얼마나 기여했는지를 보여줍니다.")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.markdown("### 🎯 분석 실행")
+        
+        if st.button("🚀 SHAP 분석 시작", use_container_width=True, type="primary", key="shap_start"):
+            with st.spinner("🔄 SHAP 계산 중... (최대 10분 소요)"):
+                try:
+                    response = requests.post(
+                        f"{st.session_state.base_url}/analyze",
+                        timeout=600
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("status") == "success":
+                            st.session_state.shap_results = data
+                            st.session_state.shap_completed = True
+                            st.success("✅ SHAP 분석 완료!")
+                        else:
+                            st.error(f"분석 실패: {data}")
+                    else:
+                        st.error(f"HTTP 오류: {response.status_code}")
+                
+                except Exception as e:
+                    st.error(f"❌ SHAP 분석 실패: {e}")
+        
+        st.markdown("---")
+        
+        if st.session_state.shap_completed:
+            st.success("✅ 분석 완료")
+            if st.button("🔄 재분석", use_container_width=True):
+                st.session_state.shap_completed = False
+                st.session_state.shap_results = None
+                st.rerun()
+        else:
+            st.warning("⏳ 분석 대기 중")
+    
+    with col2:
+        st.markdown("### 📊 분석 결과")
+        
+        if st.session_state.shap_results:
+            data = st.session_state.shap_results
+            imp = data.get("importance", {})
+            
+            df_imp = pd.DataFrame([
+                {"feature": k, "importance": v}
+                for k, v in imp.items()
+            ])
+            df_imp["abs"] = df_imp["importance"].abs()
+            df_imp = df_imp.sort_values("abs", ascending=False)
+            
+            # Top N 슬라이더
+            topn = st.slider("상위 N개 피처 표시", 5, 38, 15, 1)
+            df_top = df_imp.head(topn).iloc[::-1]
+            
+            # 막대 차트
+            fig = px.bar(
+                df_top,
+                x="importance",
+                y="feature",
+                orientation="h",
+                title=f"🎯 SHAP 중요도 상위 {topn}개 피처",
+                color="importance",
+                color_continuous_scale="RdYlGn_r"
+            )
+            fig.update_layout(
+                height=max(400, topn * 25),
+                template="plotly_white",
+                xaxis_title="중요도",
+                yaxis_title="피처명"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # 상세 데이터
+            with st.expander("📋 전체 중요도 데이터 보기"):
+                st.dataframe(
+                    df_imp.drop(columns=["abs"]),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                st.json(data)
+        else:
+            st.info("왼쪽의 '🚀 SHAP 분석 시작' 버튼을 눌러 분석을 시작하세요.")
+
+# =====================================================================
+# TAB 3: 시스템 정보
+# =====================================================================
+with tab3:
+    st.markdown("## 📊 시스템 정보")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🔧 설정 정보")
+        info_data = {
+            "서버 URL": st.session_state.base_url,
+            "선택 머신": selected_machine,
+            "분석 모델": st.session_state.model_type,
+            "현재 단계": st.session_state.workflow_stage,
+            "SHAP 완료": "✅" if st.session_state.shap_completed else "❌",
+            "모니터링 활성": "🟢" if st.session_state.stream_running else "🔴"
+        }
+        for k, v in info_data.items():
+            st.metric(k, v)
+    
+    with col2:
+        st.markdown("### 📈 통계")
+        stats_data = {
+            "총 예측 횟수": len(st.session_state.history),
+            "이상 감지 횟수": len([x for x in st.session_state.history if x.get('is_anomaly', False)]),
+            "현재 인덱스": st.session_state.stream_i,
+            "경고 활성": "🚨" if time.time() < st.session_state.alert_until else "✅"
+        }
+        for k, v in stats_data.items():
+            st.metric(k, v)
+    
+    st.markdown("---")
+    
+    # API 테스트
+    st.markdown("### 🧪 API 테스트")
+    st.code(f"{st.session_state.base_url}/docs", language="text")
+    st.code(f"{st.session_state.base_url}/health", language="text")
+    
+    st.markdown("#### cURL 예시")
+    st.code(f"""curl -X POST "{st.session_state.base_url}/predict" \\
+  -H "Content-Type: application/json" \\
+  -d '{{"values":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}}'""", language="bash")
+    
+    st.code(f"""curl -X POST "{st.session_state.base_url}/analyze" """, language="bash")
+
+# =====================================================================
+# 푸터
+# =====================================================================
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 2rem;">
+    🚀 <strong>Keroro 서버 모니터링 시스템</strong> | 
+    Powered by Streamlit & FastAPI | 
+    <a href="{}/docs" target="_blank">API 문서</a>
+</div>
+""".format(st.session_state.base_url), unsafe_allow_html=True)
