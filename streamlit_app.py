@@ -200,107 +200,260 @@ def trigger_emergency_alert():
     )
 
 # =====================================================================
-# 머신러닝 모델 (Isolation Forest)
+# 머신러닝 모델 (Isolation Forest) - 2단계 워크플로우
 # =====================================================================
 if model_type == "ML (IsolationForest)":
-    st.header("🤖 머신러닝 기반 이상 탐지 (Isolation Forest)")
     
-    # 모델 학습
-    X_train = df_train.drop(columns=['timestamp'], axis=1)
-    model = IsolationForest(contamination=0.01, random_state=42)
-    
-    with st.spinner('모델 학습 중...'):
-        model.fit(X_train)
-    
-    st.success("✅ 모델 학습 완료!")
+    # 모델 학습 (최초 1회)
+    if 'ml_model_trained' not in st.session_state:
+        X_train = df_train.drop(columns=['timestamp'], axis=1)
+        model = IsolationForest(contamination=0.01, random_state=42)
+        
+        with st.spinner('모델 학습 중...'):
+            model.fit(X_train)
+        
+        st.session_state.ml_model = model
+        st.session_state.ml_model_trained = True
+    else:
+        model = st.session_state.ml_model
     
     # 파라미터 설정
     DANGER_LINE = 0.0
     WARNING_THRESHOLD = 0.05
     
-    # 실시간 분석 UI
-    status_box = st.empty()
-    chart_box = st.empty()
+    # 세션 변수 초기화
+    if 'ml_workflow_stage' not in st.session_state:
+        st.session_state.ml_workflow_stage = 'SHAP_FIRST'  # SHAP_FIRST, MONITORING
     
-    scores_history = []
+    if 'ml_scores_history' not in st.session_state:
+        st.session_state.ml_scores_history = []
     
     if 'last_anomaly_time_ml' not in st.session_state:
         st.session_state.last_anomaly_time_ml = 0
     
-    # 실시간 분석 루프
-    for i in range(st.session_state.current_idx, len(df_test_display)):
-        st.session_state.current_idx = i
-        current_row = df_test_display.iloc[i:i+1][new_column_names]
+    if 'ml_shap_completed' not in st.session_state:
+        st.session_state.ml_shap_completed = False
+    
+    # ========== 단계 1: SHAP 분석 먼저 ==========
+    if st.session_state.ml_workflow_stage == 'SHAP_FIRST':
+        st.header("🤖 머신러닝 기반 이상 탐지 (Isolation Forest)")
+        st.success("✅ 모델 학습 완료!")
         
-        # 이상 점수 계산
-        score = model.decision_function(current_row)[0]
-        scores_history.append(score)
+        st.divider()
+        st.subheader("1️⃣ 단계 1: SHAP 원인 분석")
         
-        # 이상 탐지
-        is_anomaly = score < DANGER_LINE
-        is_warning = (score < WARNING_THRESHOLD) and (not is_anomaly)
+        if not st.session_state.ml_shap_completed:
+            st.info("📊 먼저 SHAP 분석을 통해 주요 이상 원인 지표를 파악합니다")
+            
+            if st.button("🚀 SHAP 분석 실행", use_container_width=True, type="primary"):
+                with st.spinner("SHAP 분석 중..."):
+                    explainer = shap.TreeExplainer(model)
+                    X_sample = df_test_display[new_column_names].sample(min(100, len(df_test_display)))
+                    shap_values = explainer.shap_values(X_sample)
+                    
+                    importance = np.abs(shap_values).mean(axis=0)
+                    analysis_df = pd.DataFrame({
+                        'Feature': new_column_names,
+                        'Importance': importance
+                    }).sort_values(by='Importance', ascending=False)
+                    
+                    st.session_state.ml_shap_results = analysis_df
+                    st.session_state.ml_shap_completed = True
+                    st.success("✅ SHAP 분석 완료!")
+                    time.sleep(1)
+                    st.rerun()
         
-        if is_anomaly:
-            st.session_state.last_anomaly_time_ml = time.time()
+        else:
+            # SHAP 결과 표시
+            st.success("✅ SHAP 분석이 완료되었습니다!")
+            
+            if st.session_state.ml_shap_results is not None:
+                top_features = st.session_state.ml_shap_results.head(10)
+                
+                fig = px.bar(
+                    top_features[::-1],
+                    x='Importance',
+                    y='Feature',
+                    orientation='h',
+                    title="주요 이상 원인 지표 TOP 10",
+                    color='Importance',
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(height=500)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # 상세 데이터 표시
+                with st.expander("📋 전체 분석 결과 보기"):
+                    st.dataframe(
+                        st.session_state.ml_shap_results,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+            
+            st.divider()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 SHAP 재분석", use_container_width=True):
+                    st.session_state.ml_shap_completed = False
+                    st.rerun()
+            
+            with col2:
+                if st.button("▶️ 실시간 모니터링 시작", use_container_width=True, type="primary"):
+                    st.session_state.ml_workflow_stage = 'MONITORING'
+                    st.session_state.current_idx = 0
+                    st.session_state.ml_scores_history = []
+                    st.rerun()
+    
+    # ========== 단계 2: 실시간 모니터링 ==========
+    elif st.session_state.ml_workflow_stage == 'MONITORING':
+        st.header("🤖 머신러닝 기반 이상 탐지 (Isolation Forest)")
         
-        is_maintaining_alert = (time.time() - st.session_state.last_anomaly_time_ml) < 10
+        # SHAP 결과 요약 표시
+        with st.expander("📊 SHAP 분석 결과 요약"):
+            if st.session_state.ml_shap_results is not None:
+                top_3 = st.session_state.ml_shap_results.head(3)
+                cols = st.columns(3)
+                for idx, row in enumerate(top_3.itertuples()):
+                    with cols[idx]:
+                        st.metric(
+                            f"#{idx+1} {row.Feature}",
+                            f"{row.Importance:.4f}"
+                        )
         
-        # 상태 표시
-        with status_box.container():
-            if is_maintaining_alert and not st.session_state.mute_alert:
-                trigger_emergency_alert()
-                rem = int(10 - (time.time() - st.session_state.last_anomaly_time_ml))
-                if rem > 0:
-                    st.toast(f"🚨 경고 유지: {rem}초")
-            elif is_warning:
-                st.warning(f"⚠️ [주의] 이상 전조 증상 포착! (점수: {score:.4f})")
-            else:
-                st.info(f"✅ [정상] 운영 상태 양호 (점수: {score:.4f})")
+        st.divider()
+        st.subheader("2️⃣ 단계 2: 실시간 이상 탐지 모니터링")
         
-        # 차트 업데이트
-        with chart_box.container():
-            latest_scores = scores_history[-100:]
-            plot_df = pd.DataFrame({
-                'step': range(max(0, i-len(latest_scores)+1), i+1),
-                'score': latest_scores
+        # 실시간 분석 UI
+        status_box = st.empty()
+        alert_box = st.empty()
+        chart_box = st.empty()
+        metrics_box = st.empty()
+        
+        # 실시간 분석 루프
+        for i in range(st.session_state.current_idx, len(df_test_display)):
+            st.session_state.current_idx = i
+            current_row = df_test_display.iloc[i:i+1][new_column_names]
+            
+            # 이상 점수 계산
+            score = model.decision_function(current_row)[0]
+            st.session_state.ml_scores_history.append({
+                'step': i,
+                'score': score,
+                'is_anomaly': score < DANGER_LINE
             })
             
-            fig = px.line(plot_df, x='step', y='score', title=f"{selected_machine} 이상 탐지 점수")
-            fig.add_hrect(y0=DANGER_LINE, y1=WARNING_THRESHOLD, 
-                         fillcolor="yellow", opacity=0.3, line_width=0)
-            fig.add_hrect(y0=-0.5, y1=DANGER_LINE, 
-                         fillcolor="red", opacity=0.2, line_width=0)
-            fig.add_hline(y=DANGER_LINE, line_dash="dash", line_color="red")
-            fig.add_hline(y=WARNING_THRESHOLD, line_dash="dot", line_color="orange")
+            # 이상 탐지
+            is_anomaly = score < DANGER_LINE
+            is_warning = (score < WARNING_THRESHOLD) and (not is_anomaly)
             
-            fig.update_layout(
-                yaxis=dict(range=[-0.5, 0.5], fixedrange=True),
-                height=400,
-                transition_duration=50
-            )
+            if is_anomaly:
+                st.session_state.last_anomaly_time_ml = time.time()
             
-            st.plotly_chart(fig, use_container_width=True, key=f"ml_chart_{i}")
-        
-        time.sleep(0.1)
-    
-    # SHAP 분석
-    st.divider()
-    st.subheader("🔍 Root Cause Analysis (SHAP)")
-    
-    with st.spinner("SHAP 분석 중..."):
-        explainer = shap.TreeExplainer(model)
-        X_sample = df_test_display[new_column_names].sample(min(100, len(df_test_display)))
-        shap_values = explainer.shap_values(X_sample)
-        
-        importance = np.abs(shap_values).mean(axis=0)
-        analysis_df = pd.DataFrame({
-            'Feature': new_column_names,
-            'Importance': importance
-        }).sort_values(by='Importance', ascending=False)
-        
-        fig = px.bar(analysis_df.head(10)[::-1], x='Importance', y='Feature', 
-                    orientation='h', color='Importance', color_continuous_scale='Reds')
-        st.plotly_chart(fig, use_container_width=True)
+            is_maintaining_alert = (time.time() - st.session_state.last_anomaly_time_ml) < 10
+            
+            # 경고 표시
+            now = time.time()
+            if now - st.session_state.last_anomaly_time_ml < 10:
+                with alert_box.container():
+                    if not st.session_state.mute_alert:
+                        trigger_emergency_alert()
+                    remaining = int(10 - (now - st.session_state.last_anomaly_time_ml))
+                    st.toast(f"🚨 이상 감지! ({remaining}초 유지)")
+            else:
+                alert_box.empty()
+            
+            # 상태 표시
+            with status_box.container():
+                if is_anomaly:
+                    st.error(f"🚨 **이상 발생!** 점수: {score:.4f} | 임계치: {DANGER_LINE:.4f}")
+                elif is_warning:
+                    st.warning(f"⚠️ **주의** 이상 전조 증상 포착! (점수: {score:.4f})")
+                else:
+                    st.success(f"✅ **정상 상태** 점수: {score:.4f}")
+            
+            # 차트 업데이트
+            with chart_box.container():
+                if len(st.session_state.ml_scores_history) > 0:
+                    # 최근 100개 데이터
+                    recent_data = st.session_state.ml_scores_history[-100:]
+                    df_chart = pd.DataFrame(recent_data)
+                    
+                    # 메인 차트
+                    import plotly.graph_objects as go
+                    fig = go.Figure()
+                    
+                    # 정상 구간
+                    normal_data = df_chart[~df_chart['is_anomaly']]
+                    fig.add_trace(go.Scatter(
+                        x=normal_data['step'],
+                        y=normal_data['score'],
+                        mode='lines+markers',
+                        name='정상',
+                        line=dict(color='green', width=2),
+                        marker=dict(size=4)
+                    ))
+                    
+                    # 이상 구간
+                    anomaly_data = df_chart[df_chart['is_anomaly']]
+                    if len(anomaly_data) > 0:
+                        fig.add_trace(go.Scatter(
+                            x=anomaly_data['step'],
+                            y=anomaly_data['score'],
+                            mode='markers',
+                            name='이상',
+                            marker=dict(color='red', size=10, symbol='x')
+                        ))
+                    
+                    # 임계치 영역
+                    fig.add_hrect(
+                        y0=DANGER_LINE, y1=WARNING_THRESHOLD,
+                        fillcolor="yellow", opacity=0.3, line_width=0,
+                        annotation_text="주의 구간",
+                        annotation_position="top left"
+                    )
+                    fig.add_hrect(
+                        y0=-0.5, y1=DANGER_LINE,
+                        fillcolor="red", opacity=0.2, line_width=0,
+                        annotation_text="위험 구간",
+                        annotation_position="bottom left"
+                    )
+                    
+                    fig.add_hline(
+                        y=DANGER_LINE,
+                        line_dash="dash",
+                        line_color="red",
+                        annotation_text=f"위험 임계치: {DANGER_LINE}",
+                        annotation_position="right"
+                    )
+                    
+                    fig.update_layout(
+                        title=f"{selected_machine} 실시간 이상 탐지 점수 (최근 100개)",
+                        xaxis_title="Time Step",
+                        yaxis_title="Anomaly Score",
+                        yaxis=dict(range=[-0.5, 0.5], fixedrange=True),
+                        height=450,
+                        hovermode='x unified'
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True, key=f"ml_chart_{i}")
+            
+            # 메트릭 표시
+            with metrics_box.container():
+                cols = st.columns(4)
+                with cols[0]:
+                    st.metric("현재 Step", i)
+                with cols[1]:
+                    st.metric("총 데이터 수", len(st.session_state.ml_scores_history))
+                with cols[2]:
+                    anomaly_count = sum(1 for d in st.session_state.ml_scores_history if d['is_anomaly'])
+                    st.metric("이상 감지 횟수", anomaly_count)
+                with cols[3]:
+                    if len(st.session_state.ml_scores_history) > 0:
+                        anomaly_rate = anomaly_count / len(st.session_state.ml_scores_history) * 100
+                        st.metric("이상 발생률", f"{anomaly_rate:.2f}%")
+            
+            time.sleep(0.1)
 
 # =====================================================================
 # 딥러닝 모델 (Anomaly Transformer) - 3단계 워크플로우
