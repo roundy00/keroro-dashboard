@@ -28,7 +28,7 @@ machine_num = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
                '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8', '3-9', '3-10', '3-11']
 
 # API 서버 주소
-SHAP_API_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+SHAP_API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/analyze"
 ANOMALY_API_URL = "https://unbarreled-uncrusted-juliana.ngrok-free.dev/predict"
 
 # 피처 이름
