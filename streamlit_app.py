@@ -300,30 +300,28 @@ elif "DL" in model_type:
             # 가장 최근의 100개 데이터를 3차원으로 변환
             input_window = raw_data[-WINDOW_SIZE:].reshape(1, WINDOW_SIZE, -1)
             input_data = input_window.tolist() # JSON 전송을 위해 리스트로 변환
+          
+            shap_res = requests.post(MY_SHAP_URL, json={"window": input_data}, timeout=60)
+            
+            if shap_res.status_code == 200:
+              res_data = shap_res.json()
+              # 서버 응답 키인 'importance'로 데이터 추출
+              importance_data = res_data.get('importance', {})
+              
+              if importance_data:
+                # 딕셔너리 형태를 데이터프레임으로 변환
+                imp_df = pd.DataFrame([
+                    {'Feature': k, 'Importance': v} for k, v in importance_data.items()
+                ])
+                imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+                st.session_state['dl_importance_fixed'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
+                st.success("✅ 사전 분석 완료!")
+              else:
+                st.error("서버 응답에 분석 결과(importance)가 없습니다.")
           else:
             st.error(f"데이터가 부족합니다. 최소 {WINDOW_SIZE}개가 필요합니다.")
-            st.stop()
-          shap_res = requests.post(MY_SHAP_URL, json={"window": input_data}, timeout=60)
-          
-          if shap_res.status_code == 200:
-            res_data = shap_res.json()
-            # 서버 응답 키인 'importance'로 데이터 추출
-            importance_data = res_data.get('importance', {})
-            
-            if importance_data:
-              # 딕셔너리 형태를 데이터프레임으로 변환
-              imp_df = pd.DataFrame([
-                  {'Feature': k, 'Importance': v} for k, v in importance_data.items()
-              ])
-              imp_df['Abs_Importance'] = imp_df['Importance'].abs()
-              st.session_state['dl_importance_fixed'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
-              st.success("✅ 사전 분석 완료!")
-            else:
-              st.error("서버 응답에 분석 결과(importance)가 없습니다.")
-    else:
-      st.error(f"데이터가 부족합니다. 최소 {WINDOW_SIZE}개가 필요합니다.")
-except Exception as e:
-    st.error(f"SHAP 분석 실패: {e}")
+        except Exception as e:
+          st.error(f"SHAP 분석 실패: {e}")
 
   # 분석 결과가 있으면 차트 출력
   if 'dl_importance_fixed' in st.session_state:
