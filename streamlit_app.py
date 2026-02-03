@@ -105,10 +105,11 @@ def init_session_state():
         'anomaly_scores': [],
         'last_anomaly_time': 0,
         'mute_alert': False,
-        'FILE_PATH': '/Users/hri/east/backend/data/machine-1-1.npy',
+        'FILE_PATH': '',
         'START_INDEX': 15800,
         'SLEEP_SEC': 0.2,
         'N_PER_RERUN': 5,
+        'npy_data_loaded': False,
     }
     
     for key, value in defaults.items():
@@ -167,11 +168,19 @@ with st.sidebar:
     if st.session_state.model_type == 'DL':
         st.markdown("#### 📊 DL 모델 설정")
         
-        file_path = st.text_input(
-            "NPY 파일 경로",
-            value=st.session_state.FILE_PATH
-        )
-        st.session_state.FILE_PATH = file_path
+        # GitHub에서 자동 로드
+        st.info(f"📂 GitHub에서 {selected_machine}.npy 로드")
+        
+        # 로드 버튼
+        if st.button("🔄 데이터 로드", use_container_width=True):
+            with st.spinner("GitHub에서 데이터 다운로드 중..."):
+                data, temp_path = load_npy_from_github(selected_machine)
+                if data is not None:
+                    st.session_state.FILE_PATH = temp_path
+                    st.session_state.npy_data_loaded = True
+                    st.success(f"✅ 로드 완료: {data.shape}")
+                else:
+                    st.error("데이터 로드 실패")
         
         start_index = st.number_input(
             "시작 인덱스",
@@ -215,7 +224,7 @@ with st.sidebar:
             st.success("음소거됨")
 
 # =====================================================================
-# 데이터 로드 함수 (ML 모드용)
+# 데이터 로드 함수
 # =====================================================================
 @st.cache_data
 def load_data(machine_name):
@@ -232,6 +241,30 @@ def load_data(machine_name):
     df_test.rename(columns=rename_dict, inplace=True)
     
     return df_train, df_test
+
+@st.cache_data
+def load_npy_from_github(machine_name):
+    """GitHub에서 NPY 파일 로드"""
+    # GitHub raw URL
+    url = f'https://github.com/roundy00/keroro-dashboard/raw/master/{machine_name}.npy'
+    
+    try:
+        # 임시 파일로 다운로드
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # 임시 파일에 저장
+        temp_path = f'/tmp/{machine_name}.npy'
+        with open(temp_path, 'wb') as f:
+            f.write(response.content)
+        
+        # numpy 배열로 로드
+        data = np.load(temp_path)
+        return data, temp_path
+    
+    except Exception as e:
+        st.error(f"GitHub에서 파일 로드 실패: {e}")
+        return None, None
 
 # =====================================================================
 # 유틸리티 함수
@@ -313,10 +346,26 @@ with tab1:
             st.success("✅ 초기화 완료")
         
         if start_btn:
-            if not os.path.exists(st.session_state.FILE_PATH):
-                st.error(f"❌ 파일을 찾을 수 없습니다: {st.session_state.FILE_PATH}")
+            # 데이터가 로드되지 않았으면 자동으로 GitHub에서 로드
+            if not st.session_state.npy_data_loaded or not st.session_state.FILE_PATH:
+                with st.spinner("GitHub에서 데이터 다운로드 중..."):
+                    data, temp_path = load_npy_from_github(selected_machine)
+                    if data is not None:
+                        st.session_state.FILE_PATH = temp_path
+                        st.session_state.npy_data_loaded = True
+                        all_data = data
+                    else:
+                        st.error("❌ GitHub에서 데이터를 로드할 수 없습니다.")
+                        all_data = None
             else:
-                all_data = np.load(st.session_state.FILE_PATH)
+                # 이미 로드된 파일 사용
+                if os.path.exists(st.session_state.FILE_PATH):
+                    all_data = np.load(st.session_state.FILE_PATH)
+                else:
+                    st.error(f"❌ 파일을 찾을 수 없습니다: {st.session_state.FILE_PATH}")
+                    all_data = None
+            
+            if all_data is not None:
                 target_data = all_data[st.session_state.START_INDEX:]
                 st.session_state.stream_target = target_data
                 st.session_state.stream_i = 0
