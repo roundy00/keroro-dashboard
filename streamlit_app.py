@@ -603,12 +603,13 @@ elif model_type == "DL (Anomaly Transformer)":
                                 importance_data = result.get('importance', {})
                                 if result.get("status") != "success":
                                     st.error(f"SHAP 서버 실패: {result}")
-                                    return
+                                    st.stop()
                                 
                                 importance_data = result.get("importance")
                                 if not importance_data:
                                     st.error("SHAP 결과 importance가 비어 있습니다.")
-                                    return
+                                    st.stop()
+                                    
                                 if importance_data:
                                     # 3. 데이터프레임 변환 및 정렬
                                     imp_df = pd.DataFrame([
