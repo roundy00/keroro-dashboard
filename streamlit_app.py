@@ -363,7 +363,7 @@ elif "DL" in model_type:
             
         else:
           # 데이터 수집 단계 (WIN_SIZE 100개 채우는 중) 
-          status_box.info(f"⏳ 서버 데이터 축적 중... ({res['progress']})")
+          status_box.info(f"⏳ 서버 데이터 축적 중... ({res.get('progress','진행중')})")
       
       else:
         st.error(f"서버 오류: {response.status_code}")
