@@ -12,7 +12,7 @@ import shap
 # 페이지 설정
 # =====================================================================
 st.set_page_config(
-    page_title="실시간 서버 모니터링",
+    page_title="실시간 서버 모니터링(Claude)",
     page_icon="🚀",
     layout="wide"
 )
