@@ -22,13 +22,15 @@ machine_num = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8',
                     '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8', '2-9',
                     '3-1', '3-2', '3-3', '3-4', '3-5', '3-6', '3-7', '3-8', '3-9', '3-10', '3-11']
 
+# --- SHAP 서버 주소 다시 정의 ---
+MY_SHAP_URL = "https://nontractable-hailey-petiolar.ngrok-free.dev/analyze"
+
 # 경고 상태를 관리하기 위한 변수 초기화
 if 'mute_alert' not in st.session_state:
   st.session_state.mute_alert = False
 if 'current_idx' not in st.session_state:
   st.session_state.current_idx = 0
 
-# ✅ 이 줄을 반드시 추가하세요!
 if 'last_anomaly_time' not in st.session_state:
     st.session_state.last_anomaly_time = 0
 
@@ -281,6 +283,37 @@ if 'ML' in model_type:
 # 2. 딥러닝 모델인 경우 (API 호출)
 
 elif "DL" in model_type:
+  st.subheader("🔍 단계 1: 시스템 주요 지표 사전 분석 (SHAP)")
+    
+  # 세션 상태에 분석 결과가 없을 때만 실행
+  if 'dl_importance_fixed' not in st.session_state:
+    if st.button("🚀 전체 데이터 원인 분석 시작"):
+      with st.spinner("사용자 서버에서 SHAP 분석을 진행 중입니다..."):
+        try:
+          # 사용자님의 SHAP API 호출 (전체 혹은 샘플 데이터 송신)
+          # 여기서는 예시로 마지막 100개 행의 평균적인 특성을 분석한다고 가정합니다.
+          sample_data = df_input[new_column_names].head(100).values.tolist()
+          shap_res = requests.post(MY_SHAP_URL, json={"values": sample_data}, timeout=60)
+          
+          if shap_res.status_code == 200:
+            reasons = shap_res.json().get('reasons', [])
+            imp_df = pd.DataFrame(reasons)
+            imp_df.columns = ['Feature', 'Importance']
+            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+            # 결과를 세션에 고정 저장
+            st.session_state['dl_importance_fixed'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
+            st.success("✅ 사전 분석 완료! 이제 실시간 모니터링을 시작할 수 있습니다.")
+        except Exception as e:
+          st.error(f"SHAP 분석 실패: {e}")
+
+  # 분석 결과가 있으면 차트 출력
+  if 'dl_importance_fixed' in st.session_state:
+    top_df = st.session_state['dl_importance_fixed'].head(10)
+    fig_shap = px.bar(top_df[::-1], x='Importance', y='Feature', orientation='h', title="전체 데이터 주요 변수 기여도")
+    st.plotly_chart(fig_shap, use_container_width=True)
+    
+    st.divider()
+
   st.warning("⚠️ 딥러닝 모델은 서버로부터 실시간 분석 결과를 가져옵니다.")
     
   # 팀원에게 받은 서버 주소 적용
@@ -296,13 +329,13 @@ elif "DL" in model_type:
   
   # 시뮬레이션 시작 (test_client.py의 로직을 Streamlit 안으로 가져옴)
   # display_df의 데이터를 한 줄씩 쏘며 결과를 받아옵니다.
-  for i in range(len(display_df)):
-    # 38개 피처 추출 (new_column_names 활용)
+  for i in range(st.session_state.current_idx, len(display_df)):
+    st.session_state.current_idx = i
     current_row = display_df.iloc[i][new_column_names].values.tolist()
     
     try:
       # 🚨 서버에 현재 행 데이터를 보내고 결과를 받음 
-      response = requests.post(API_URL, json={"values": current_row}, timeout = 30)
+      response = requests.post(API_URL, json={"values": current_row}, timeout = 5)
       
       if response.status_code == 200:
         res = response.json()
@@ -365,40 +398,3 @@ time.sleep(0.2) # test_client.py의 전송 속도와 맞춤
 with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
-
-
-# --- 모델이 선정한 주요 지표 Top 5 시각화 ---
-# --- 파일 최하단 'Top 5 Influential Features' 섹션 수정 ---
-with st.expander('🔍 서버 전체 데이터 원인 분석 (Root Cause Analysis)', expanded=True):
-  if "DL" in model_type:
-    st.write("실시간 탐지의 안정성을 위해 SHAP 분석을 분리하였습니다.")
-    
-    # ✅ 분석 실행 버튼
-    if st.button("📊 현재 시점 주요 원인 분석 실행"):
-      with st.spinner("서버로부터 전체 데이터 분석 결과를 가져오는 중..."):
-        try:
-          # 서버에 SHAP만 따로 요청하는 엔드포인트가 있다면 해당 URL 사용
-          # 없다면 마지막 응답(res)에 포함된 내용을 버튼 클릭 시점에 세션에 저장
-          if "reasons" in res:
-            imp_df = pd.DataFrame(res["reasons"])
-            imp_df.columns = ['Feature', 'Importance']
-            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
-            st.session_state['dl_importance_static'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
-            st.success("분석 완료!")
-        except:
-          st.error("분석 결과를 가져오지 못했습니다. 서버 상태를 확인하세요.")
-
-    # ✅ 저장된 결과 시각화
-    if 'dl_importance_static' in st.session_state:
-      top_5 = st.session_state['dl_importance_static'].head(5)
-      
-      # 1. 막대 그래프로 전체 순위 표시
-      fig_bar = px.bar(top_5, x='Importance', y='Feature', orientation='h', 
-                       title="Top 5 기여 지표", color='Importance')
-      st.plotly_chart(fig_bar, use_container_width=True)
-      
-      # 2. 개별 지표 상세 그래프
-      for idx, col in enumerate(top_5['Feature']):
-        if col in df_input.columns:
-          fig_line = px.line(df_input.tail(100), y=col, title=f"🚨 지표 상세: {col}")
-          st.plotly_chart(fig_line, use_container_width=True, key=f"static_shap_{idx}")
