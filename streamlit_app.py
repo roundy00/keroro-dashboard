@@ -302,7 +302,7 @@ elif "DL" in model_type:
     
     try:
       # 🚨 서버에 현재 행 데이터를 보내고 결과를 받음 
-      response = requests.post(API_URL, json={"values": current_row})
+      response = requests.post(API_URL, json={"values": current_row}, timeout = 20)
       
       if response.status_code == 200:
         res = response.json()
