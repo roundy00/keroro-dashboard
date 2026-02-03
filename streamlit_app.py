@@ -130,8 +130,7 @@ def trigger_emergency_alert():
           🚨🚨 SYSTEM CRITICAL: EMERGENCY 🚨🚨
       </div>
       """,
-      unsafe_allow_html=True
-  )
+      unsafe_allow_html=True)
 # ===============================================
 
 # 1. 머신러닝 모델인 경우
