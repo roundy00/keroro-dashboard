@@ -540,10 +540,7 @@ elif model_type == "DL (Anomaly Transformer)":
                             
                             # 2. SHAP API 호출
                             response = requests.post(
-                                SHAP_API_URL,
-                                json={"window": window_data},
-                                timeout=120
-                            )
+                                SHAP_API_URL)
                             
                             if response.status_code == 200:
                                 result = response.json()
