@@ -307,10 +307,10 @@ elif "DL" in model_type:
       if response.status_code == 200:
         res = response.json()
         
-        if res['status'] == "ready":
+        if res.get('status') == "ready":
           # 결과값 업데이트
-          is_anomaly = res['is_anomaly']
-          score = res['score']
+          is_anomaly = res.get('is_anomaly', False)
+          score = res.get('score', 0.0)
           scores.append(score)
 
           # --- [통합된 SHAP 결과 처리] ---
@@ -327,6 +327,19 @@ elif "DL" in model_type:
             # 세션에 저장 (하단 expander 시각화용)
             st.session_state['dl_importance'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
 
+          # --- 실시간 점수 차트 업데이트 ---
+          temp_df = pd.DataFrame({
+              'step': range(len(scores)),
+              'score': scores
+          })
+          fig = px.line(temp_df, x='step', y='score', title="Real-time Anomaly Score (Last 100)")
+          
+          # ✅ [수정] threshold 키 에러 방지 (서버에서 대문자 THRESHOLD로 올 수도 있으므로 안전하게 처리)
+          server_threshold = res.get('threshold', 0.50546515)
+          fig.add_hline(y=server_threshold, line_dash="dash", line_color="red")
+          
+          st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
+          
           # 🚨 이상 감지 시 '개요란한' 경고 발생
           if is_anomaly:
             st.session_state.last_anomaly_time = time.time()
@@ -385,18 +398,21 @@ with st.expander('Data'):
 
 
 # --- 모델이 선정한 주요 지표 Top 5 시각화 ---
+# --- 파일 최하단 ---
 with st.expander('🔍 Top 5 Influential Features Detail View', expanded=True):
-  if "DL" in model_type:
-    if 'dl_importance' in st.session_state:
-      # 실시간으로 업데이트된 상위 5개 지표 리스트 추출
-      top_features = st.session_state['dl_importance'].head(5)['Feature'].tolist()
-      
-      # 5개의 차트를 나열
-      for idx, col in enumerate(top_features):
-        if col in df_input.columns: # 컬럼명이 데이터에 존재하는지 확인
-          fig = px.line(df_input.tail(100), y=col, 
-                       title=f"🚨 주요 원인 {idx+1}: {col}",
-                       line_shape='spline', render_mode='svg')
-          st.plotly_chart(fig, use_container_width=True, key=f"shap_chart_{col}_{idx}")
-    else:
-      st.info("💡 이상 징후가 감지되면 실시간 원인 분석 결과가 여기에 표시됩니다.")
+    if "DL" in model_type:
+        if 'dl_importance' in st.session_state and not st.session_state['dl_importance'].empty:
+            # 실시간으로 업데이트된 상위 5개 지표 리스트 추출
+            top_features = st.session_state['dl_importance'].head(5)['Feature'].tolist()
+            
+            st.write(f"⚠️ 현재 이상 징후에 가장 큰 영향을 준 지표 TOP 5입니다.")
+            
+            for idx, col in enumerate(top_features):
+                # 데이터프레임에 해당 컬럼이 존재하는지 확인 (대소문자 주의)
+                if col in df_input.columns:
+                    fig = px.line(df_input.tail(100), y=col, 
+                                 title=f"🚨 주요 원인 {idx+1}: {col}",
+                                 line_shape='spline', render_mode='svg')
+                    st.plotly_chart(fig, use_container_width=True, key=f"shap_detail_{col}_{idx}")
+        else:
+            st.info("💡 이상 탐지 서버로부터 분석 결과(SHAP)를 기다리고 있습니다.")
