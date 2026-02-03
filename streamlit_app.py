@@ -292,8 +292,18 @@ elif "DL" in model_type:
         try:
           # 사용자님의 SHAP API 호출 (전체 혹은 샘플 데이터 송신)
           # 여기서는 예시로 마지막 100개 행의 평균적인 특성을 분석한다고 가정합니다.
-          sample_data = df_input[new_column_names].head(100).values.tolist()
-          shap_res = requests.post(MY_SHAP_URL, json={"values": sample_data}, timeout=60)
+          raw_data = df_input[new_column_names].values # (N, 38)
+          WINDOW_SIZE = 100
+          # 3. 데이터 규격 맞추기 (Sliding Window 생성)
+          # 만약 서버가 [1, 100, 38] 형태를 원한다면 아래와 같이 슬라이싱합니다.
+          if len(raw_data) >= WINDOW_SIZE:
+            # 가장 최근의 100개 데이터를 3차원으로 변환
+            input_window = raw_data[-WINDOW_SIZE:].reshape(1, WINDOW_SIZE, -1)
+            input_data = input_window.tolist() # JSON 전송을 위해 리스트로 변환
+          else:
+            st.error(f"데이터가 부족합니다. 최소 {WINDOW_SIZE}개가 필요합니다.")
+            st.stop()
+          shap_res = requests.post(MY_SHAP_URL, json={"window": input_data}, timeout=60)
           
           if shap_res.status_code == 200:
             reasons = shap_res.json().get('reasons', [])
