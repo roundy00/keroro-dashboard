@@ -306,15 +306,24 @@ elif "DL" in model_type:
           shap_res = requests.post(MY_SHAP_URL, json={"window": input_data}, timeout=60)
           
           if shap_res.status_code == 200:
-            reasons = shap_res.json().get('reasons', [])
-            imp_df = pd.DataFrame(reasons)
-            imp_df.columns = ['Feature', 'Importance']
-            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
-            # 결과를 세션에 고정 저장
-            st.session_state['dl_importance_fixed'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
-            st.success("✅ 사전 분석 완료! 이제 실시간 모니터링을 시작할 수 있습니다.")
-        except Exception as e:
-          st.error(f"SHAP 분석 실패: {e}")
+            res_data = shap_res.json()
+            # 서버 응답 키인 'importance'로 데이터 추출
+            importance_data = res_data.get('importance', {})
+            
+            if importance_data:
+              # 딕셔너리 형태를 데이터프레임으로 변환
+              imp_df = pd.DataFrame([
+                  {'Feature': k, 'Importance': v} for k, v in importance_data.items()
+              ])
+              imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+              st.session_state['dl_importance_fixed'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
+              st.success("✅ 사전 분석 완료!")
+            else:
+              st.error("서버 응답에 분석 결과(importance)가 없습니다.")
+    else:
+      st.error(f"데이터가 부족합니다. 최소 {WINDOW_SIZE}개가 필요합니다.")
+except Exception as e:
+    st.error(f"SHAP 분석 실패: {e}")
 
   # 분석 결과가 있으면 차트 출력
   if 'dl_importance_fixed' in st.session_state:
