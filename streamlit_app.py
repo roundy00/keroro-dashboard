@@ -290,6 +290,7 @@ elif "DL" in model_type:
           # 여기서는 예시로 마지막 100개 행의 평균적인 특성을 분석한다고 가정합니다.
           raw_data = df_input[new_column_names].values # (N, 38)
           WINDOW_SIZE = 100
+
           # 3. 데이터 규격 맞추기 (Sliding Window 생성)
           # 만약 서버가 [1, 100, 38] 형태를 원한다면 아래와 같이 슬라이싱합니다.
           if len(raw_data) >= WINDOW_SIZE:
