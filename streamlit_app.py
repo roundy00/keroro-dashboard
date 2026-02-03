@@ -507,7 +507,61 @@ elif model_type == "DL (Anomaly Transformer)":
                                 if is_anomaly: st.error(f"🚨 이상 발생! 점수: {score:.6f}")
                                 else: st.success(f"✅ 정상 상태 점수: {score:.6f}")
                             
-                            # (중략: 기존 차트 및 메트릭 출력 로직 동일 적용)
+                            # 1. 경고 및 알림 로직 (최근 30초 내 이상 발생 시)
+                            now = time.time()
+                            if is_anomaly:
+                                st.session_state.last_anomaly_time = now
+                                st.toast(f"🚨 이상 감지! (Step: {i})")
+                            
+                            # 2. 실시간 차트 업데이트 (최근 100개 데이터)
+                            with chart_box:
+                                if len(st.session_state.anomaly_scores) > 0:
+                                    recent_data = st.session_state.anomaly_scores[-100:]
+                                    df_chart = pd.DataFrame(recent_data)
+                                    
+                                    fig = go.Figure()
+                                    
+                                    # 정상 데이터 (초록색 선)
+                                    normal_data = df_chart[~df_chart['is_anomaly']]
+                                    fig.add_trace(go.Scatter(
+                                        x=df_chart['step'], y=df_chart['score'],
+                                        mode='lines', name='Score',
+                                        line=dict(color='#2ecc71', width=2)
+                                    ))
+                                    
+                                    # 이상 지점 (빨간색 X 표시)
+                                    anomaly_pts = df_chart[df_chart['is_anomaly']]
+                                    if not anomaly_pts.empty:
+                                        fig.add_trace(go.Scatter(
+                                            x=anomaly_pts['step'], y=anomaly_pts['score'],
+                                            mode='markers', name='Anomaly',
+                                            marker=dict(color='#e74c3c', size=10, symbol='x')
+                                        ))
+                                    
+                                    # 임계치 점선
+                                    fig.add_hline(y=threshold, line_dash="dash", line_color="#c0392b", 
+                                                  annotation_text=f"Threshold: {threshold:.4f}")
+                                    
+                                    fig.update_layout(
+                                        title=f"실시간 이상 탐지 스코어 (최근 100 step)",
+                                        xaxis_title="Time Step", yaxis_title="Score",
+                                        height=400, margin=dict(l=10, r=10, t=40, b=10),
+                                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                                    )
+                                    st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
+
+                            # 3. 실시간 메트릭 카드 업데이트
+                            with metrics_box:
+                                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                                anomaly_count = sum(1 for d in st.session_state.anomaly_scores if d['is_anomaly'])
+                                total_count = len(st.session_state.anomaly_scores)
+                                anomaly_rate = (anomaly_count / total_count * 100) if total_count > 0 else 0
+                                
+                                m_col1.metric("현재 Step", i)
+                                m_col2.metric("현재 스코어", f"{score:.4f}", delta=f"{score-threshold:.4f}" if is_anomaly else None, delta_color="inverse")
+                                m_col3.metric("이상 감지 횟수", f"{anomaly_count}회")
+                                m_col4.metric("이상 발생률", f"{anomaly_rate:.2f}%")
+                                
                         else:
                             status_box.info(f"⏳ 서버 데이터 축적 중... ({result.get('progress')})")
                 except Exception as e:
