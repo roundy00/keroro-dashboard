@@ -314,20 +314,6 @@ elif "DL" in model_type:
           score = res.get('score', 0.0)
           scores.append(score)
 
-          # --- [통합된 SHAP 결과 처리] ---
-          # 서버에서 보낸 'reasons' 필드가 SHAP 분석 결과입니다.
-          if "reasons" in res and res["reasons"]:
-            # 서버 응답 형태: [{"feature": "name", "importance": value}, ...]
-            importance_data = res["reasons"]
-            imp_df = pd.DataFrame(importance_data)
-            
-            # 컬럼명 맞추기 및 절대값 정렬
-            imp_df.columns = ['Feature', 'Importance']
-            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
-            
-            # 세션에 저장 (하단 expander 시각화용)
-            st.session_state['dl_importance'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
-
           # --- 경고 알림 로직 ---
           now = time.time()
           if is_anomaly:
@@ -382,21 +368,37 @@ with st.expander('Data'):
 
 
 # --- 모델이 선정한 주요 지표 Top 5 시각화 ---
-# --- 파일 최하단 ---
-with st.expander('🔍 Top 5 Influential Features Detail View', expanded=True):
-    if "DL" in model_type:
-        if 'dl_importance' in st.session_state and not st.session_state['dl_importance'].empty:
-            # 실시간으로 업데이트된 상위 5개 지표 리스트 추출
-            top_features = st.session_state['dl_importance'].head(5)['Feature'].tolist()
-            
-            st.write(f"⚠️ 현재 이상 징후에 가장 큰 영향을 준 지표 TOP 5입니다.")
-            
-            for idx, col in enumerate(top_features):
-                # 데이터프레임에 해당 컬럼이 존재하는지 확인 (대소문자 주의)
-                if col in df_input.columns:
-                    fig = px.line(df_input.tail(100), y=col, 
-                                 title=f"🚨 주요 원인 {idx+1}: {col}",
-                                 line_shape='spline', render_mode='svg')
-                    st.plotly_chart(fig, use_container_width=True, key=f"shap_detail_{col}_{idx}")
-        else:
-            st.info("💡 이상 탐지 서버로부터 분석 결과(SHAP)를 기다리고 있습니다.")
+# --- 파일 최하단 'Top 5 Influential Features' 섹션 수정 ---
+with st.expander('🔍 서버 전체 데이터 원인 분석 (Root Cause Analysis)', expanded=True):
+  if "DL" in model_type:
+    st.write("실시간 탐지의 안정성을 위해 SHAP 분석을 분리하였습니다.")
+    
+    # ✅ 분석 실행 버튼
+    if st.button("📊 현재 시점 주요 원인 분석 실행"):
+      with st.spinner("서버로부터 전체 데이터 분석 결과를 가져오는 중..."):
+        try:
+          # 서버에 SHAP만 따로 요청하는 엔드포인트가 있다면 해당 URL 사용
+          # 없다면 마지막 응답(res)에 포함된 내용을 버튼 클릭 시점에 세션에 저장
+          if "reasons" in res:
+            imp_df = pd.DataFrame(res["reasons"])
+            imp_df.columns = ['Feature', 'Importance']
+            imp_df['Abs_Importance'] = imp_df['Importance'].abs()
+            st.session_state['dl_importance_static'] = imp_df.sort_values(by='Abs_Importance', ascending=False)
+            st.success("분석 완료!")
+        except:
+          st.error("분석 결과를 가져오지 못했습니다. 서버 상태를 확인하세요.")
+
+    # ✅ 저장된 결과 시각화
+    if 'dl_importance_static' in st.session_state:
+      top_5 = st.session_state['dl_importance_static'].head(5)
+      
+      # 1. 막대 그래프로 전체 순위 표시
+      fig_bar = px.bar(top_5, x='Importance', y='Feature', orientation='h', 
+                       title="Top 5 기여 지표", color='Importance')
+      st.plotly_chart(fig_bar, use_container_width=True)
+      
+      # 2. 개별 지표 상세 그래프
+      for idx, col in enumerate(top_5['Feature']):
+        if col in df_input.columns:
+          fig_line = px.line(df_input.tail(100), y=col, title=f"🚨 지표 상세: {col}")
+          st.plotly_chart(fig_line, use_container_width=True, key=f"static_shap_{idx}")
