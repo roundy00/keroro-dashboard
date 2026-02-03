@@ -363,41 +363,6 @@ elif "DL" in model_type:
             # 임계치 선 추가 (main.py의 THRESHOLD 사용) 
             fig.add_hline(y=res['threshold'], line_dash="dash", line_color="red")
             st.plotly_chart(fig, use_container_width=True, key=f"dl_chart_{i}")
-
-            if auto_dl_analyze:
-              current_time = time.time()
-              # 10초 주기로 SHAP 분석 서버 호출
-              if current_time - st.session_state.last_shap_time > 10:
-                # SHAP 분석에는 최신 100개의 시계열 데이터(Window)가 필요함
-                # df_input이 실시간으로 쌓이고 있다면 tail(100)을 사용
-                if len(df_input) >= 100:
-                  target_window = df_input[new_column_names].tail(100).values.tolist()
-                  
-                  shap_payload = {
-                      "machine_name": selected_machine,
-                      "window": target_window
-                  }
-                  
-                  try:
-                    # SHAP 서버는 분석 시간이 걸리므로 timeout을 넉넉히 줌
-                    shap_resp = requests.post(SHAP_URL, json=shap_payload, timeout=15)
-                    
-                    if shap_resp.status_code == 200:
-                      res_data = shap_resp.json()
-                      if res_data.get("status") == "success":
-                        # 1. 중요도 데이터 가공
-                        importance_dict = res_data["importance"]
-                        imp_df_new = pd.DataFrame(list(importance_dict.items()), 
-                                                  columns=['Feature', 'Importance'])
-                        # 2. 절대값 기준으로 영향력 정렬
-                        imp_df_new['Abs_Importance'] = imp_df_new['Importance'].abs()
-                        st.session_state['dl_importance'] = imp_df_new.sort_values(by='Abs_Importance', ascending=False)
-                        
-                        st.session_state.last_shap_time = current_time
-                        # st.toast("💡 원인 분석 결과가 갱신되었습니다.") 
-                  except Exception as e:
-                      # SHAP 서버 에러가 탐지 루프를 멈추지 않도록 예외 처리
-                      pass
             
         else:
           # 데이터 수집 단계 (WIN_SIZE 100개 채우는 중) 
@@ -417,13 +382,20 @@ with st.expander('Data'):
   st.write('**Raw Data**')
   df_input
 
-# --- 공통 시각화 (모델이 선정한 주요 지표 Top 5 시각화) ---
-# for 루프가 완전히 종료된 후 위치 (들여쓰기 없음)
-with st.expander('🔍 Top 5 Influential Features Detail View'):
-    if "DL" in model_type:
-        if 'dl_importance' in st.session_state:
-            # 루프에서 마지막으로 저장된 따끈따끈한 Top 5를 가져와서 출력
-            top_features = st.session_state['dl_importance'].head(5)['Feature'].tolist()
-            for idx, col in enumerate(top_features):
-                fig = px.line(df_input.tail(100), y=col, ...)
-                st.plotly_chart(fig, use_container_width=True)
+
+# --- 모델이 선정한 주요 지표 Top 5 시각화 ---
+with st.expander('🔍 Top 5 Influential Features Detail View', expanded=True):
+  if "DL" in model_type:
+    if 'dl_importance' in st.session_state:
+      # 실시간으로 업데이트된 상위 5개 지표 리스트 추출
+      top_features = st.session_state['dl_importance'].head(5)['Feature'].tolist()
+      
+      # 5개의 차트를 나열
+      for idx, col in enumerate(top_features):
+        if col in df_input.columns: # 컬럼명이 데이터에 존재하는지 확인
+          fig = px.line(df_input.tail(100), y=col, 
+                       title=f"🚨 주요 원인 {idx+1}: {col}",
+                       line_shape='spline', render_mode='svg')
+          st.plotly_chart(fig, use_container_width=True, key=f"shap_chart_{col}_{idx}")
+    else:
+      st.info("💡 이상 징후가 감지되면 실시간 원인 분석 결과가 여기에 표시됩니다.")
