@@ -6,7 +6,7 @@ import os
 # 1. 설정 및 경로
 url = "http://localhost:8000/predict"
 # 실제 파일 경로
-FILE_PATH = "/content/drive/MyDrive/CODE 침략! 케로로 - 시계열프로젝트/prototype/backend/machine-1-1.npy"
+FILE_PATH = "/Users/hri/east/backend/data/machine-1-1.npy"
 START_INDEX = 15800  # 요청하신 시작 지점
 
 # 2. 데이터 로드
