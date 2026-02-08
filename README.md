@@ -22,3 +22,13 @@ This is filler text, please replace this with a explanatory text about further r
 - Resource 1
 - Resource 2
 - Resource 3
+
+
+## 백엔드 실행 (류이)
+1. cd backend
+2. python main.py
+3. (다른 프롬프트) ngrok http 8000
+4. 프론트로 주소 넘겨주기
+
+## 프론트 실행 (다영)
+1. 
