@@ -4,7 +4,6 @@ This is an app visualizing real-time server anomaly detection
 
 ## Demo App
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://keroro-dashboard-anomaly-detection.streamlit.app/)
  
 ## GitHub Codespaces
 
